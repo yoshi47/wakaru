@@ -3,7 +3,7 @@
   "name": "wakaru",
   "description": "会議のタブ音声を端末内で文字起こしし、日本語と英語を相互に翻訳して字幕表示します",
   "version": "0.1.0",
-  "minimum_chrome_version": "159",
+  "minimum_chrome_version": "157",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmeeaafUhmIdgfC5zgjxxrn7GrbhE10a1a5LJvmhdtYsUjTmuGQCk3gmGellOcsOqECoWENLyDv7q+Vzu3Lf+t0Jl0Gx5DEAMa8bcWcgXCgSP+cn7qEhNZNCIAzkYQ8VxcMkwns4E0ByvGS4Yq5WTcWRL1/91OudDy8JWEBZKR63nMwKjCMXwhxG4MzZwwa4XMg/yeH7nneRum82HGeul8nWeUDsI339J0B24q5Ie3KwAkDJcmFcnPEYT9HCL+d1IFpH0uQsHhVsUiaRQ73IOZQUjHoM4Wq+H9GqXZK2zSVyVSftgwSXbnDzPv+Y8OyFjpkx+j5i6K+/yjk5u6/cX3wIDAQAB",
   "permissions": ["sidePanel", "tabCapture", "activeTab", "storage", "unlimitedStorage"],
   "background": { "service_worker": "background.js", "type": "module" },
