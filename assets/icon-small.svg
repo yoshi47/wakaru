@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <rect x="0" y="0" width="128" height="128" rx="28" fill="#2F3A8F"/>
+  <!-- Same two bubbles as icon.svg without the letters, drawn larger so they read at 16px -->
+  <path d="M16 16 h56 a14 14 0 0 1 14 14 v28 a14 14 0 0 1 -14 14 h-30 l-18 16 v-16 h-8 a14 14 0 0 1 -14 -14 v-28 a14 14 0 0 1 14 -14 z" fill="#FFFFFF"/>
+  <path d="M56 50 h52 a14 14 0 0 1 14 14 v26 a14 14 0 0 1 -14 14 h-4 v16 l-18 -16 h-30 a14 14 0 0 1 -14 -14 v-26 a14 14 0 0 1 14 -14 z" fill="#FF7A59" stroke="#2F3A8F" stroke-width="7"/>
+</svg>
