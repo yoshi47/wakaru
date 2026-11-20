@@ -37,3 +37,29 @@ header {
 main {
   padding: 8px 12px;
 }
+
+.spike h2 {
+  font-size: 13px;
+  margin: 4px 0 8px;
+}
+
+.spike .row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.spike .step {
+  width: 3em;
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.spike textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font: 11px ui-monospace, monospace;
+  margin: 6px 0;
+}
