@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8" />
+<title>wakaru overlap scenarios</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 24px; }
+  li.playing { font-weight: bold; }
+  li.done { opacity: 0.5; }
+  .clips { font-size: 13px; opacity: 0.8; }
+</style>
+<h1>wakaru かぶりシナリオ</h1>
+<p>
+  <button id="play" type="button">全部再生</button>
+  シナリオの間隔 <input id="gap" type="number" value="5" step="1" min="2" style="width: 4em" /> 秒
+</p>
+<p>音声は <code>node dev/gen-overlap-audio.mjs</code> で作る。</p>
+<ol id="list"></ol>
+<script type="module">
+  const scenarios = await (await fetch('./overlap.json')).json();
+  const list = document.getElementById('list');
+  const items = scenarios.map((s) => {
+    const li = document.createElement('li');
+    li.innerHTML = `${s.title}<div class="clips">${s.clips.map((c) => `[${c.lang}] ${c.text}`).join('<br>')}</div>`;
+    list.append(li);
+    return li;
+  });
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const load = (src) =>
+    new Promise((resolve, reject) => {
+      const a = new Audio(src);
+      a.onloadedmetadata = () => resolve(a);
+      a.onerror = () => reject(new Error(`cannot load ${src}`));
+    });
+  const ended = (a) => new Promise((r) => (a.onended = r));
+
+  // Each clip starts relative to the previous one: afterPrevEndMs after its end (negative overlaps),
+  // or atPrevRatio of the way through it.
+  async function playScenario(s) {
+    const audios = await Promise.all(s.clips.map((_, i) => load(`./audio/overlap/${s.id}_${i + 1}.wav`)));
+    const starts = [];
+    s.clips.forEach((c, i) => {
+      if (i === 0) return starts.push(0);
+      const prevMs = audios[i - 1].duration * 1000;
+      starts.push(starts[i - 1] + (c.atPrevRatio !== undefined ? prevMs * c.atPrevRatio : prevMs + (c.afterPrevEndMs ?? 0)));
+    });
+    const t0 = performance.now();
+    const done = audios.map(async (a, i) => {
+      await sleep(Math.max(0, t0 + starts[i] - performance.now()));
+      console.log(`${s.id} clip ${i + 1} starts at +${starts[i]}ms`);
+      await a.play().catch((e) => console.error(`${s.id} clip ${i + 1}: ${e}`));
+      await ended(a);
+    });
+    await Promise.all(done);
+  }
+
+  document.getElementById('play').onclick = async () => {
+    const gapMs = Number(document.getElementById('gap').value) * 1000;
+    items.forEach((li) => (li.className = ''));
+    for (const [i, s] of scenarios.entries()) {
+      items[i].className = 'playing';
+      await playScenario(s);
+      items[i].className = 'done';
+      await sleep(gapMs);
+    }
+  };
+</script>
+</html>
