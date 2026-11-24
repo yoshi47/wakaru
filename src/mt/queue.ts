@@ -83,9 +83,9 @@ export class TranslationQueue {
     const startedAt = this.#now();
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    // Racing the timeout keeps the queue moving even if a backend does not honor the signal. Such a
-    // backend would still be generating when the next job starts; Task 4 decides whether PlamoBackend
-    // needs to wait for wllama to stop first.
+    // Racing the timeout keeps the queue moving even if a backend does not honor the signal at once.
+    // The next job may then start while the backend is still ending this one: PlamoBackend makes it
+    // wait for that itself.
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
         controller.abort();

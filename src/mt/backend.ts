@@ -4,6 +4,8 @@ export type PrepareProgress = { phase: 'download' | 'load'; ratio?: number };
 
 export interface TranslatorBackend {
   readonly id: 'plamo' | 'chrome';
+  /** False before prepare() and after dispose(); for PLaMo also while it reloads after a crash. */
+  readonly ready: boolean;
   prepare(onProgress?: (p: PrepareProgress) => void): Promise<void>;
   translate(text: string, from: Lang, to: Lang, signal: AbortSignal): Promise<string>;
   /** From the clear button. */
