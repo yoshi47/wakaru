@@ -58,7 +58,9 @@ export class Arbiter {
       this.#windows.push(open);
     }
     open.finals.push(f);
-    if (open.finals.some((g) => g.lang !== f.lang)) open.closedAt = f.at;
+    // A synthetic final carries the time its speech was last heard, which may be earlier than the
+    // window's other finals: the window closes at the latest of them.
+    if (open.finals.some((g) => g.lang !== f.lang)) open.closedAt = Math.max(...open.finals.map((g) => g.at));
   }
 
   /** Call every 100ms. */

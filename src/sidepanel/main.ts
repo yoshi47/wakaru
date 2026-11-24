@@ -1,5 +1,5 @@
 import { loadTarget, onTargetChange, type Target } from '../shared/target';
-import { mountSpike } from './spike';
+import { mountDebugPanel } from './debugPanel';
 
 const titleEl = document.getElementById('target-title')!;
 
@@ -12,7 +12,7 @@ document.getElementById('close')!.addEventListener('click', async () => {
   if (id !== undefined) await chrome.sidePanel.close({ windowId: id });
 });
 
-mountSpike(document.getElementById('main')!);
+await mountDebugPanel(document.getElementById('main')!);
 
 // Listen before reading, so that a change made while reading is not missed.
 onTargetChange(showTarget);
