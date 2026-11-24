@@ -38,12 +38,7 @@ main {
   padding: 8px 12px;
 }
 
-.spike h2 {
-  font-size: 13px;
-  margin: 4px 0 8px;
-}
-
-.spike .row {
+.debug .row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -51,13 +46,37 @@ main {
   margin-bottom: 6px;
 }
 
-.spike .step {
-  width: 3em;
-  font-size: 11px;
-  opacity: 0.6;
+.debug .status {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-bottom: 6px;
 }
 
-.spike textarea {
+.debug .interim {
+  min-height: 1.4em;
+  font-size: 12px;
+  opacity: 0.6;
+  font-style: italic;
+}
+
+.debug .utterances {
+  padding-left: 1.6em;
+  margin: 6px 0;
+}
+
+.debug .utterances li {
+  margin-bottom: 6px;
+}
+
+.debug .translation {
+  opacity: 0.75;
+}
+
+.debug .translation.error {
+  color: #d55;
+}
+
+.debug textarea {
   width: 100%;
   box-sizing: border-box;
   font: 11px ui-monospace, monospace;
