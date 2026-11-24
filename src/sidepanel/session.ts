@@ -14,8 +14,11 @@ export type SessionEvents = {
   /** `id` is the translation job's id, or null when the utterance was dropped. */
   onDecision(id: number | null, d: Decision): void;
   onTranslation(o: Outcome): void;
-  /** `reason` is null when the user stopped. */
-  onEnded(reason: string | null): void;
+  /**
+   * `reason` is null when the user stopped. `fatal`: a recognizer stopped for good, which the
+   * panel shows as an error; otherwise the captured tab ended.
+   */
+  onEnded(reason: string | null, fatal: boolean): void;
   onLog(message: string): void;
 };
 
@@ -80,7 +83,7 @@ export class Session {
       onInterim: (lang, generation, text) => s.#onInterim(lang, generation, text),
       onFinal: (lang, generation, text) => s.#onFinal(lang, generation, text),
       onEnd: (lang, generation) => s.#onEnd(lang, generation),
-      onFatal: (lang, error) => void s.stop(`音声認識（${lang}）が止まりました: ${error}`),
+      onFatal: (lang, error) => void s.stop(`音声認識（${lang}）が止まりました: ${error}`, true),
       onLog: (m) => opts.events.onLog(m),
     });
     try {
@@ -95,7 +98,7 @@ export class Session {
   }
 
   /** The stop procedure of the plan. Safe to call more than once. */
-  stop(reason: string | null = null): Promise<void> {
+  stop(reason: string | null = null, fatal = false): Promise<void> {
     this.#stopping ??= (async () => {
       clearInterval(this.#timer);
       this.#recognizer?.stop();
@@ -107,7 +110,7 @@ export class Session {
       await this.#audio?.stop();
       this.#ended = true;
       this.#events.onLog(`stopped${reason ? `: ${reason}` : ''}`);
-      this.#events.onEnded(reason);
+      this.#events.onEnded(reason, fatal);
     })();
     return this.#stopping;
   }

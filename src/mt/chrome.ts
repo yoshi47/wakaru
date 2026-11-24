@@ -12,6 +12,8 @@ export class ChromeBackend implements TranslatorBackend {
    * from a click, without awaiting anything before it.
    */
   async prepare(): Promise<void> {
+    // 準備 is pressed again after a failed step or a reset: the translators made before are kept.
+    if (this.ready) return;
     const pairs = [['ja', 'en'], ['en', 'ja']] as const;
     const created = await Promise.all(
       pairs.map(([s, t]) => translatorApi().create({ sourceLanguage: s, targetLanguage: t })),
