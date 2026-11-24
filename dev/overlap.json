@@ -1,0 +1,50 @@
+[
+  {
+    "id": "ja-en",
+    "title": "日英のかぶり: 日本語の終わり 1 秒に英語の返事",
+    "clips": [
+      { "lang": "ja", "text": "来週のリリースについて、スケジュールを確認させてください。" },
+      { "lang": "en", "text": "Sure, we are planning to ship the new feature on Wednesday.", "afterPrevEndMs": -1000 }
+    ]
+  },
+  {
+    "id": "en-ja",
+    "title": "日英のかぶり: 英語の終わり 1 秒に日本語の返事",
+    "clips": [
+      { "lang": "en", "text": "Most of the tests are done, but we still need to check the payment flow." },
+      { "lang": "ja", "text": "決済フローのレビューは、田中さんにお願いしています。", "afterPrevEndMs": -1000 }
+    ]
+  },
+  {
+    "id": "backchannel-ja",
+    "title": "相づち: 英語の途中に「うん、うん」",
+    "clips": [
+      { "lang": "en", "text": "I think we should push back the deadline if QA can't finish by Friday." },
+      { "lang": "ja", "text": "うん、うん。", "atPrevRatio": 0.5 }
+    ]
+  },
+  {
+    "id": "backchannel-en",
+    "title": "相づち: 日本語の途中に「Yeah」",
+    "clips": [
+      { "lang": "ja", "text": "その件は一旦持ち帰って、チーム内で検討させてください。" },
+      { "lang": "en", "text": "Yeah.", "atPrevRatio": 0.5 }
+    ]
+  },
+  {
+    "id": "same-start",
+    "title": "同時に話し始める",
+    "clips": [
+      { "lang": "ja", "text": "ウェブ版の方です。モバイルは来月対応予定です。" },
+      { "lang": "en", "text": "Just to clarify, are we talking about the mobile app or the web version?", "atPrevRatio": 0 }
+    ]
+  },
+  {
+    "id": "ja-ja",
+    "title": "日本語どうし: 別の声が終わり 1.5 秒に重なる",
+    "clips": [
+      { "lang": "ja", "text": "すみません、ちょっと音声が途切れていました。" },
+      { "lang": "ja", "voice": "second-ja", "text": "なるほど、それならキャッシュを入れれば解決しそうですね。", "afterPrevEndMs": -1500 }
+    ]
+  }
+]

@@ -18,6 +18,10 @@ const MADE_UP: Record<string, { lang: string; confidence: number }> = {
   'abcd efgh': { lang: 'en', confidence: 1 },
   'one two three': { lang: 'en', confidence: 0.7 },
   'one two three four': { lang: 'en', confidence: 0.7 },
+  // Overlap scenarios (Task 3.5). Correct English sentences measured en 1.00 elsewhere.
+  'Planning to ship the new feature on Wednesday': { lang: 'en', confidence: 1 },
+  'Most of the tests are done but we still need to check the payment flow': { lang: 'en', confidence: 1 },
+  Disney: { lang: 'en', confidence: 0.5 },
 };
 
 const RELEASE = '来週のリリースについてスケジュールを確認させてください';
@@ -205,6 +209,91 @@ describe('Arbiter judge details', () => {
   it('uses the lower threshold for up to 3 English words only', async () => {
     expect((await decideOne([['en', 'one two three']])).lang).toBe('en');
     expect((await decideOne([['en', 'one two three four']])).lang).toBeNull();
+  });
+});
+
+describe('Arbiter with overlapping speech (Task 3.5 log)', () => {
+  it('takes both when an English reply overlaps the end of a Japanese utterance', async () => {
+    const { arbiter, push, advance } = setup();
+    push('en', 'Planning to ship the new feature on Wednesday', 0);
+    push('ja', RELEASE, 278);
+    advance(800);
+    const ds = await arbiter.flushDue();
+    expect(ds.map((d) => [d.lang, d.text])).toEqual([
+      ['en', 'Planning to ship the new feature on Wednesday'],
+      ['ja', RELEASE],
+    ]);
+  });
+
+  it('takes both when a Japanese reply overlaps the end of an English utterance', async () => {
+    const { arbiter, push, advance } = setup();
+    push('en', 'Most of the tests are done but we still need to check the payment flow', 0);
+    push('ja', 'のレビューは田中さんにお願いしています', 500);
+    advance(800);
+    expect((await arbiter.flushDue()).map((d) => d.lang)).toEqual(['en', 'ja']);
+  });
+
+  it('takes one when the other side is a misrecognition (ja-ja overlap, en "Disney")', async () => {
+    const d = await decideOne([
+      ['en', 'Disney'],
+      ['ja', 'すみませんちょっと音声を入れれば解決しそうですね'],
+    ]);
+    expect(d.lang).toBe('ja');
+  });
+
+  it('takes one when the Japanese side is shorter than 4 kana or kanji', async () => {
+    const { arbiter, push, advance } = setup();
+    push('ja', 'そうだ');
+    push('en', 'Most of the tests are done but we still need to check the payment flow');
+    advance(800);
+    expect((await arbiter.flushDue()).map((d) => d.lang)).toEqual(['en']);
+  });
+
+  it('does not count Latin letters on the Japanese side as a real utterance', async () => {
+    const { arbiter, push, advance } = setup();
+    push('ja', 'WEB API OK');
+    push('en', 'Most of the tests are done but we still need to check the payment flow');
+    advance(800);
+    expect((await arbiter.flushDue()).map((d) => d.lang)).toEqual(['en']);
+  });
+
+  it('does not count katakana as a real Japanese utterance (English spelled in katakana)', async () => {
+    const { arbiter, push, advance } = setup();
+    push('ja', 'モストオブザテストアーダン');
+    push('en', 'Most of the tests are done but we still need to check the payment flow');
+    advance(800);
+    expect((await arbiter.flushDue()).map((d) => d.lang)).toEqual(['en']);
+  });
+
+  it('rejects nothing when it takes both', async () => {
+    const { arbiter, push, advance } = setup();
+    push('en', 'Planning to ship the new feature on Wednesday', 0);
+    push('ja', RELEASE, 278);
+    advance(800);
+    expect((await arbiter.flushDue()).flatMap((d) => d.rejected)).toEqual([]);
+  });
+
+  it('after taking both, drops a short word in the language opposite to the last final', async () => {
+    const { arbiter, push, advance } = setup();
+    push('ja', RELEASE, 0);
+    push('en', 'Planning to ship the new feature on Wednesday', 300);
+    advance(800);
+    await arbiter.flushDue();
+    // The window closed at 300, when the second language came: 900 is within windowMs.
+    push('ja', 'OK', 900);
+    advance(1000);
+    expect((await arbiter.flushDue())[0]?.lang).toBeNull();
+  });
+
+  it('keeps a real utterance in the other language right after a decision', async () => {
+    const { arbiter, push, advance } = setup();
+    push('ja', 'はい');
+    advance(800);
+    await arbiter.flushDue();
+    advance(300);
+    push('en', 'Sure we are planning to ship the new feature on Wednesday');
+    advance(800);
+    expect((await arbiter.flushDue())[0]?.lang).toBe('en');
   });
 });
 

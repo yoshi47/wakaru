@@ -5,7 +5,8 @@ export type Final = { lang: Lang; text: string; at: number; synthetic: boolean }
 
 /**
  * The verdict on one utterance. `lang` is null when neither candidate was valid: the utterance is
- * dropped, and every final is in `rejected`.
+ * dropped, and every final is in `rejected`. A window where both languages carry a real utterance
+ * (overlapping speech) gives two decisions, ordered by `firstAt`.
  */
 export type Decision = {
   lang: Lang | null;
@@ -91,62 +92,99 @@ export class Arbiter {
   #decide(windows: Window[]): Promise<Decision[]> {
     const run = this.#chain.then(async () => {
       const out: Decision[] = [];
-      for (const w of windows) out.push(await this.#judge(w));
+      for (const w of windows) out.push(...(await this.#judge(w)));
       return out;
     });
     this.#chain = run.catch(() => undefined);
     return run;
   }
 
-  async #judge(w: Window): Promise<Decision> {
-    const rejected: Final[] = [];
-    const kept: Final[] = [];
+  async #judge(w: Window): Promise<Decision[]> {
     const last = this.#last;
-    for (const f of w.finals) {
-      // "Okay" and "OK" for the same word: the second one shows up just after the first window.
-      // Measured from when that window closed, not from decidedAt: decidedAt includes detect()'s
-      // time, and a slow detection would then swallow a real reply in the other language.
-      const echo = last && f.lang !== last.lang && f.at - last.closedAt <= this.#opts.windowMs;
-      (echo ? rejected : kept).push(f);
+    // "Okay" and "OK" for the same word: the second one shows up just after the first window.
+    // Measured from when that window closed, not from decidedAt: decidedAt includes detect()'s
+    // time, and a slow detection would then swallow a real reply in the other language.
+    const echo = (f: Final) => !!last && f.lang !== last.lang && f.at - last.closedAt <= this.#opts.windowMs;
+
+    const jaAll = w.finals.filter((f) => f.lang === 'ja');
+    const enAll = w.finals.filter((f) => f.lang === 'en');
+    const enAllText = joinEn(enAll);
+    // Detection decides validity and substance; an all-echo short English side has neither to win.
+    const needDetect = enAllText && (enAll.some((f) => !echo(f)) || words(enAllText) > SHORT_WORDS);
+    const enAllDetected = needDetect ? await this.#detect(enAllText) : null;
+    const jaSub = substantialJa(joinJa(jaAll));
+    const enSub = enAllDetected !== null && this.#substantialEn(enAllText, enAllDetected);
+
+    // The echo rule is for short words; a real utterance in the other language is talking over.
+    const ja = jaAll.filter((f) => jaSub || !echo(f));
+    const en = enAll.filter((f) => enSub || !echo(f));
+    const rejected = w.finals.filter((f) => !ja.includes(f) && !en.includes(f));
+    const jaText = joinJa(ja);
+    const enText = joinEn(en);
+    const decidedAt = this.#opts.now();
+    const decision = (lang: Lang | null, text: string, firstAt: number, out: Final[]): Decision => ({
+      lang,
+      text,
+      firstAt,
+      decidedAt,
+      rejected: out,
+    });
+
+    if (jaSub && enSub) {
+      const both = [
+        decision('ja', jaText, ja[0]!.at, []),
+        decision('en', enText, en[0]!.at, rejected),
+      ].sort((a, b) => a.firstAt - b.firstAt);
+      const lastFinal = [...ja, ...en].reduce((a, b) => (b.at > a.at ? b : a));
+      this.#last = { lang: lastFinal.lang, closedAt: w.closedAt ?? w.firstAt };
+      return both;
     }
-    const ja = kept.filter((f) => f.lang === 'ja');
-    const en = kept.filter((f) => f.lang === 'en');
-    const jaText = ja.map((f) => f.text).join('');
-    const enText = en.map((f) => f.text).join(' ');
 
     const jaValid = jaText.length > 0;
-    const enValid = enText.length > 0 && (await this.#isEnglish(enText, jaText.length === 0));
+    const enDetected = !enText ? null : enText === enAllText ? enAllDetected : await this.#detect(enText);
+    const enValid = enDetected !== null && this.#isEnglish(enText, enDetected, !jaValid);
 
     let lang: Lang | null = null;
     if (jaValid && enValid) lang = letters(enText) > letters(jaText) ? 'en' : 'ja';
     else if (jaValid) lang = 'ja';
     else if (enValid) lang = 'en';
 
-    rejected.push(...kept.filter((f) => f.lang !== lang));
-    const decision: Decision = {
-      lang,
-      text: lang === 'ja' ? jaText : lang === 'en' ? enText : '',
-      firstAt: w.firstAt,
-      decidedAt: this.#opts.now(),
-      rejected,
-    };
+    rejected.push(...[...ja, ...en].filter((f) => f.lang !== lang));
     if (lang) this.#last = { lang, closedAt: w.closedAt ?? w.firstAt };
-    return decision;
+    return [decision(lang, lang === 'ja' ? jaText : lang === 'en' ? enText : '', w.firstAt, rejected)];
   }
 
-  async #isEnglish(text: string, jaEmpty: boolean): Promise<boolean> {
-    const short = jaEmpty && text.split(/\s+/).length <= SHORT_WORDS;
-    const min = short ? this.#opts.enShortMinConfidence : this.#opts.enMinConfidence;
+  async #detect(text: string): Promise<{ lang: string; confidence: number } | null> {
     try {
-      const r = await this.#opts.detect(text);
-      return r.lang === 'en' && r.confidence >= min;
+      return await this.#opts.detect(text);
     } catch {
-      return false;
+      return null;
     }
+  }
+
+  #isEnglish(text: string, d: { lang: string; confidence: number }, jaEmpty: boolean): boolean {
+    const short = jaEmpty && words(text) <= SHORT_WORDS;
+    return d.lang === 'en' && d.confidence >= (short ? this.#opts.enShortMinConfidence : this.#opts.enMinConfidence);
+  }
+
+  #substantialEn(text: string, d: { lang: string; confidence: number }): boolean {
+    return d.lang === 'en' && d.confidence >= this.#opts.enMinConfidence && words(text) > SHORT_WORDS;
   }
 }
 
-// Japanese and English lengths are not really comparable. Both sides are valid only for short
-// words and English misrecognitions (measured), and the longer side wins those; Task 6 collects
-// the cases where this is wrong.
+const joinJa = (finals: Final[]) => finals.map((f) => f.text).join('');
+const joinEn = (finals: Final[]) => finals.map((f) => f.text).join(' ');
+const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
+
+// What the wrong recognizer produces from the other language is Latin letters on the ja side
+// ("OK", "No", "EX") and Spanish- or German-looking text on the en side (Task 1 and 3 logs). A
+// real utterance has at least this many hiragana or kanji, or is confidently English and longer
+// than a short reply. Why not katakana: the ja recognizer may spell English speech in katakana
+// ("サンキューソーマッチ"), which would then show twice next to the English.
+const JA_SUBSTANTIAL_CHARS = 4;
+const substantialJa = (text: string) => (text.match(/[\p{Script=Hiragana}\p{Script=Han}]/gu)?.length ?? 0) >= JA_SUBSTANTIAL_CHARS;
+
+// Japanese and English lengths are not really comparable. When both sides are valid but not both
+// real utterances, one is a short word or a misrecognition (measured), and the longer side wins;
+// Task 6 collects the cases where this is wrong.
 const letters = (text: string) => text.replace(/\s/g, '').length;
