@@ -103,8 +103,12 @@ export class PlamoBackend implements TranslatorBackend {
   #epoch = 0;
   #reloading = false;
 
-  constructor(opts: { onLog?: (message: string) => void } = {}) {
+  readonly #onChange: () => void;
+
+  /** `onChange`: a reload after a crash started or ended, which `ready` and `reloading` reflect. */
+  constructor(opts: { onLog?: (message: string) => void; onChange?: () => void } = {}) {
     this.#onLog = opts.onLog ?? (() => undefined);
+    this.#onChange = opts.onChange ?? (() => undefined);
   }
 
   get ready(): boolean {
@@ -318,6 +322,7 @@ export class PlamoBackend implements TranslatorBackend {
     if (instance.crashed || this.#loaded !== instance) return;
     instance.crashed = true;
     this.#reloading = true;
+    this.#onChange();
     this.#onLog(`plamo crashed: ${message(e)}; reloading`);
     const epoch = this.#epoch;
     void this.#enqueue(async () => {
@@ -332,6 +337,7 @@ export class PlamoBackend implements TranslatorBackend {
       )
       .finally(() => {
         this.#reloading = false;
+        this.#onChange();
       });
   }
 }

@@ -1,11 +1,8 @@
 import type { Decision } from '../asr/arbiter';
 import type { Outcome } from '../mt/queue';
-import { DEFAULT_SETTINGS, type Settings } from '../settings';
 import type { Lang } from '../shared/lang';
 
 const MAX_UTTERANCES = 500;
-const MAX_REJECTED = 200;
-const MAX_LATENCIES = 500;
 const MAX_LOG_LINES = 3000;
 /** Within this of the bottom counts as at the bottom: the list keeps following new lines. */
 const STICK_PX = 32;
@@ -25,7 +22,8 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return e;
 }
 
-const time = () => new Date().toTimeString().slice(0, 8);
+/** One preparation step: its state, and what to show while it runs or after it failed. */
+export type Check = { status: 'pending' | 'working' | 'ok' | 'error'; detail: string; ratio?: number };
 
 /** The subtitles: one block per utterance (source with its language, then the translation). */
 export class SubtitleView {
@@ -49,9 +47,10 @@ export class SubtitleView {
       const li = el('li', { className: 'utterance' });
       const key = `${run}:${id}`;
       li.dataset.key = key;
+      li.dataset.lang = d.lang;
       const source = el('div', { className: 'source' });
-      source.append(el('span', { className: `lang ${d.lang}`, textContent: d.lang.toUpperCase() }), ' ', d.text);
-      const translation = el('div', { className: 'translation pending', textContent: '…' });
+      source.append(el('span', { className: 'lang', textContent: d.lang.toUpperCase() }), el('span', { textContent: d.text }));
+      const translation = el('p', { className: 'translation pending', textContent: '翻訳中' });
       li.append(source, translation);
       this.#list.append(li);
       this.#translations.set(key, translation);
@@ -82,14 +81,28 @@ export class SubtitleView {
 
   setInterim(interim: { lang: Lang; text: string } | null): void {
     this.#follow(() => {
-      this.#interim.textContent = interim ? `${interim.lang.toUpperCase()} ${interim.text}` : '';
+      this.#interim.textContent = interim?.text ?? '';
+      // Something was heard: the hero stays away for the rest of the run, also in the gap between a
+      // final clearing the interim line and its decision adding the subtitle (up to windowMs).
+      if (interim?.text) this.#scroller.dataset.heard = '';
     });
+  }
+
+  /** At the end of a run: the hero may come back if nothing became a subtitle. */
+  endRun(): void {
+    this.setInterim(null);
+    delete this.#scroller.dataset.heard;
+  }
+
+  scrollToLatest(): void {
+    this.#scroller.scrollTo({ top: this.#scroller.scrollHeight, behavior: 'smooth' });
   }
 
   clear(): void {
     this.#list.replaceChildren();
     this.#translations.clear();
     this.#interim.textContent = '';
+    // data-heard stays while a run goes on (only endRun() drops it): the hero would flash back.
   }
 
   /** Runs `change`, then keeps the list at the bottom if it was there: not while the user reads above. */
@@ -101,20 +114,14 @@ export class SubtitleView {
   }
 }
 
-/** The debug section: dropped candidates, latency, and a log to copy back. */
-export class DebugView {
-  readonly #rejected: HTMLOListElement;
-  readonly #latency: HTMLElement;
+/** The log of the settings sheet, to copy into a bug report. */
+export class LogView {
   readonly #log: HTMLTextAreaElement;
-  readonly #latencies: number[] = [];
-  #lines: string[] = [];
   readonly #t0 = performance.now();
+  #lines: string[] = [];
 
-  constructor(rejected: HTMLOListElement, latency: HTMLElement, log: HTMLTextAreaElement) {
-    this.#rejected = rejected;
-    this.#latency = latency;
+  constructor(log: HTMLTextAreaElement) {
     this.#log = log;
-    this.#showLatency(null);
   }
 
   readonly log = (message: string): void => {
@@ -134,55 +141,4 @@ export class DebugView {
     this.#lines = [];
     this.#log.value = '';
   }
-
-  addRejected(d: Decision): void {
-    for (const f of d.rejected) {
-      const why = d.lang ? `${d.lang.toUpperCase()} を採用` : 'どちらも無効';
-      this.#rejected.prepend(el('li', { textContent: `${time()} ${f.lang.toUpperCase()}${f.synthetic ? '（確定扱い）' : ''} "${f.text}" — ${why}` }));
-    }
-    while (this.#rejected.children.length > MAX_REJECTED) this.#rejected.lastElementChild?.remove();
-  }
-
-  /** From the first final of an utterance to its translation. */
-  addLatency(ms: number): void {
-    this.#latencies.push(ms);
-    if (this.#latencies.length > MAX_LATENCIES) this.#latencies.shift();
-    this.#showLatency(ms);
-  }
-
-  #showLatency(last: number | null): void {
-    const n = this.#latencies.length;
-    if (!n || last === null) {
-      this.#latency.textContent = '最初の確定から訳文まで: まだありません';
-      return;
-    }
-    const sorted = [...this.#latencies].sort((a, b) => a - b);
-    const median = sorted[Math.floor((n - 1) / 2)]!;
-    const max = sorted[n - 1]!;
-    this.#latency.textContent = `最初の確定から訳文まで: 直近 ${last}ms、中央値 ${median}ms、最大 ${max}ms（${n} 件）`;
-  }
-}
-
-type Tunable = Omit<Settings, 'engine'>;
-const NUMBERS = ['windowMs', 'enMinConfidence', 'enShortMinConfidence', 'stallMs'] as const;
-
-/** The settings inputs of the debug section. Saved when valid; a session reads them when it starts. */
-export function bindSettingsForm(form: HTMLFormElement, settings: Settings, onChange: (patch: Partial<Tunable>) => void): void {
-  const input = (name: string) => form.elements.namedItem(name) as HTMLInputElement;
-  for (const name of NUMBERS) {
-    const field = input(name);
-    field.value = String(settings[name]);
-    field.placeholder = String(DEFAULT_SETTINGS[name]);
-    field.addEventListener('change', () => {
-      if (!field.checkValidity()) {
-        field.reportValidity();
-        return;
-      }
-      onChange({ [name]: Number(field.value) });
-    });
-  }
-  const noise = input('noise');
-  noise.checked = settings.noise;
-  noise.addEventListener('change', () => onChange({ noise: noise.checked }));
-  form.addEventListener('submit', (e) => e.preventDefault());
 }

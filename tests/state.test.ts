@@ -3,7 +3,10 @@ import { CONTROLS, next, type Control, type State } from '../src/sidepanel/state
 
 describe('next', () => {
   it.each<[State, Parameters<typeof next>[1], State]>([
+    // Prepared by itself when nothing needs downloading.
     ['idle', 'prepare', 'preparing'],
+    // 開始 before that: it prepares first, then starts.
+    ['idle', 'start', 'preparing'],
     ['preparing', 'prepared', 'ready'],
     ['preparing', 'prepareFailed', 'idle'],
     ['ready', 'start', 'starting'],
@@ -16,8 +19,10 @@ describe('next', () => {
     ['starting', 'ended', 'ready'],
     ['ready', 'engineChanged', 'idle'],
     ['idle', 'engineChanged', 'idle'],
+    ['error', 'engineChanged', 'idle'],
     ['ready', 'lost', 'idle'],
-    ['error', 'reset', 'idle'],
+    // 開始 after an error prepares again and starts.
+    ['error', 'start', 'preparing'],
   ])('%s --%s--> %s', (from, event, to) => {
     expect(next(from, event)).toBe(to);
   });
@@ -30,12 +35,12 @@ describe('next', () => {
     // A second click while starting would capture the tab twice.
     ['starting', 'start'],
     ['running', 'start'],
+    ['preparing', 'start'],
     // The engine stays as it is while translating (dispose() would race the job in progress).
     ['running', 'engineChanged'],
     ['preparing', 'engineChanged'],
-    ['idle', 'start'],
-    ['error', 'start'],
-    ['ready', 'reset'],
+    ['ready', 'prepare'],
+    ['error', 'prepare'],
   ])('ignores %s --%s', (from, event) => {
     expect(next(from, event)).toBeNull();
   });
@@ -43,24 +48,22 @@ describe('next', () => {
 
 describe('CONTROLS', () => {
   it.each<[State, Control[]]>([
-    ['idle', ['prepare', 'engine', 'close']],
+    ['idle', ['start', 'engine', 'clear', 'close']],
     ['preparing', ['close']],
     ['ready', ['start', 'engine', 'clear', 'close']],
     ['starting', ['close']],
     ['running', ['stop', 'clear', 'close']],
     ['stopping', ['close']],
-    ['error', ['reset', 'close']],
+    ['error', ['start', 'engine', 'clear', 'close']],
   ])('%s enables %j', (state, controls) => {
     expect([...CONTROLS[state]].sort()).toEqual([...controls].sort());
   });
 
   it('enables a control only where its event is accepted', () => {
     const eventOf: Partial<Record<Control, Parameters<typeof next>[1]>> = {
-      prepare: 'prepare',
       start: 'start',
       stop: 'stop',
       engine: 'engineChanged',
-      reset: 'reset',
     };
     for (const state of Object.keys(CONTROLS) as State[]) {
       for (const [control, event] of Object.entries(eventOf)) {
