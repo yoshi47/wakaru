@@ -2,66 +2,88 @@
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
+    <meta name="color-scheme" content="light dark" />
     <title>wakaru</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
-  <body>
-    <header>
+  <body data-state="idle">
+    <header class="topbar">
       <div class="target">
-        <span class="label">対象タブ</span>
-        <span id="target-title">（アイコンを押したタブ）</span>
+        <span class="status"><span class="dot" aria-hidden="true"></span><span id="state-label">未準備</span></span>
+        <span id="target-title" class="target-title">アイコンを押したタブ</span>
       </div>
-      <button id="close" type="button" title="パネルを閉じる">閉じる</button>
+      <div class="actions">
+        <button id="start" class="primary compact" type="button" hidden>開始</button>
+        <button id="stop" class="danger compact" type="button" hidden>停止</button>
+        <button id="busy" class="busy compact" type="button" aria-disabled="true" hidden><span class="spinner" aria-hidden="true"></span></button>
+      </div>
+      <button id="clear" class="icon-button" type="button" aria-label="字幕と翻訳の文脈を消す" title="クリア" disabled>
+        <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M4 6h12M8 6V4.5h4V6M6 6l.7 9.5h6.6L14 6" /></svg>
+      </button>
+      <button id="open-settings" class="icon-button" type="button" popovertarget="sheet" aria-label="設定" title="設定">
+        <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M3.5 6.5h8M15.5 6.5h1M3.5 13.5h1M8.5 13.5h8" /><circle cx="13.5" cy="6.5" r="2" /><circle cx="6.5" cy="13.5" r="2" /></svg>
+      </button>
+      <button id="close" class="icon-button" type="button" aria-label="パネルを閉じる" title="閉じる">
+        <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9" /></svg>
+      </button>
     </header>
-    <section class="controls">
-      <div class="row">
-        <button id="prepare" type="button" disabled>準備</button>
-        <button id="start" type="button" disabled>開始</button>
-        <button id="stop" type="button" disabled>停止</button>
-        <button id="clear" type="button" disabled title="字幕と翻訳の文脈を消す">クリア</button>
-        <button id="reset" type="button" disabled>リセット</button>
-        <label class="engine">
-          翻訳
-          <select id="engine" disabled>
-            <option value="plamo">PLaMo</option>
-            <option value="chrome">Chrome 翻訳</option>
-          </select>
-        </label>
+
+    <div id="banner" class="banner">
+      <p id="message" class="message" role="status"></p>
+      <progress id="progress" class="progress" max="1" aria-label="翻訳モデルのダウンロード" hidden></progress>
+    </div>
+
+    <main id="subtitles" class="stream">
+      <div class="hero">
+        <p id="hero-text" class="hero-text"></p>
+        <button id="start-hero" class="primary" type="button" hidden>開始</button>
       </div>
-      <div id="message" class="message" role="status"></div>
-      <dl class="readiness">
-        <dt>言語パック</dt>
-        <dd id="ready-langs">未準備</dd>
-        <dt>言語判定</dt>
-        <dd id="ready-detector">未準備</dd>
-        <dt>翻訳</dt>
-        <dd id="ready-engine">未準備</dd>
-      </dl>
-    </section>
-    <main id="subtitles">
-      <ol id="utterances"></ol>
-      <div id="interim" class="interim"></div>
+      <ol id="utterances" class="utterances"></ol>
+      <div id="interim" class="interim" aria-hidden="true"></div>
+
+      <button id="to-latest" class="to-latest" type="button">
+        <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M10 4v11M5 10.5l5 5 5-5" /></svg>
+        最新へ
+      </button>
     </main>
-    <details id="debug">
-      <summary>デバッグ</summary>
-      <div id="latency" class="latency"></div>
-      <form id="settings" class="settings">
-        <label>windowMs <input name="windowMs" type="number" min="100" max="5000" step="any" required /></label>
-        <label>enMinConfidence <input name="enMinConfidence" type="number" min="0" max="1" step="any" required /></label>
-        <label>enShortMinConfidence <input name="enShortMinConfidence" type="number" min="0" max="1" step="any" required /></label>
-        <label>stallMs <input name="stallMs" type="number" min="300" max="10000" step="any" required /></label>
-        <label><input name="noise" type="checkbox" /> ノイズを混ぜる</label>
-        <span class="note">次の開始から反映</span>
-      </form>
-      <h3>捨てた候補</h3>
-      <ol id="rejected" class="rejected"></ol>
-      <h3>ログ</h3>
-      <textarea id="log" readonly rows="10"></textarea>
-      <div class="row">
-        <button id="copy-log" type="button">ログをコピー</button>
-        <button id="clear-log" type="button">ログを消す</button>
+
+    <div id="sheet" class="sheet" popover role="dialog" aria-labelledby="sheet-title">
+      <div class="sheet-head">
+        <h2 id="sheet-title">設定</h2>
+        <button id="close-sheet" class="icon-button" type="button" autofocus popovertarget="sheet" popovertargetaction="hide" aria-label="設定を閉じる" title="閉じる">
+          <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9" /></svg>
+        </button>
       </div>
-    </details>
+      <div class="sheet-body">
+        <section>
+          <fieldset class="segmented" id="engine" aria-describedby="engine-status engine-note" disabled>
+            <legend>翻訳エンジン</legend>
+            <div class="track">
+              <label>
+                <input type="radio" name="engine" value="plamo" />
+                <span class="option-name">PLaMo</span>
+                <span class="option-desc">訳が自然 · 初回に 573MB</span>
+              </label>
+              <label>
+                <input type="radio" name="engine" value="chrome" />
+                <span class="option-name">Chrome 翻訳</span>
+                <span class="option-desc">軽くて速い · 直訳寄り</span>
+              </label>
+            </div>
+          </fieldset>
+          <p id="engine-status" class="hint"></p>
+          <p id="engine-note" class="hint" tabindex="-1">準備中と聞き取り中は変更できません。</p>
+        </section>
+        <details class="dev">
+          <summary>不具合の報告用ログ</summary>
+          <textarea id="log" readonly rows="10" aria-label="ログ"></textarea>
+          <div class="row">
+            <button id="copy-log" class="secondary" type="button">ログをコピー</button>
+            <button id="clear-log" class="secondary" type="button">ログを消す</button>
+          </div>
+        </details>
+      </div>
+    </div>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

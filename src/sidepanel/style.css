@@ -1,177 +1,756 @@
+/* ---- Tokens ----
+ * Surfaces are shown by tone and 1px lines; no shadows. Colors are warm neutrals with a green ink
+ * for actions, amber for Japanese and cyan for English sources. Why not a web font: the panel
+ * would fetch it or ship megabytes of Japanese glyphs; the system font (Hiragino on macOS) reads well.
+ */
 :root {
   color-scheme: light dark;
-  font-family: system-ui, sans-serif;
-  font-size: 14px;
-  --line: color-mix(in srgb, currentColor 20%, transparent);
-  --muted: color-mix(in srgb, currentColor 65%, transparent);
-  --error: #d55;
+
+  --bg: light-dark(oklch(98.6% 0.004 85), oklch(19% 0.008 85));
+  --surface: light-dark(oklch(96.2% 0.006 85), oklch(23.5% 0.009 85));
+  --surface-2: light-dark(oklch(92.6% 0.008 85), oklch(29% 0.01 85));
+  --line: light-dark(oklch(89% 0.008 85), oklch(33% 0.01 85));
+  --fg: light-dark(oklch(23% 0.012 85), oklch(93% 0.006 85));
+  --muted: light-dark(oklch(49% 0.012 85), oklch(71% 0.01 85));
+
+  --accent: light-dark(oklch(46% 0.09 170), oklch(78% 0.11 170));
+  --on-accent: light-dark(oklch(98% 0.01 170), oklch(20% 0.03 170));
+  --danger: light-dark(oklch(53% 0.19 27), oklch(72% 0.15 27));
+  --danger-soft: light-dark(oklch(95% 0.03 27), oklch(29% 0.06 27));
+  --busy: light-dark(oklch(70% 0.14 75), oklch(78% 0.12 80));
+  --rec: oklch(62% 0.21 27);
+
+  --ja: light-dark(oklch(70% 0.14 65), oklch(76% 0.12 70));
+  --ja-ink: light-dark(oklch(45% 0.11 60), oklch(84% 0.09 75));
+  --en: light-dark(oklch(62% 0.1 225), oklch(72% 0.09 225));
+  --en-ink: light-dark(oklch(43% 0.09 230), oklch(84% 0.06 225));
+
+  --font: system-ui, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  --text-lg: 1rem; /* translations */
+  --text-md: 0.875rem; /* controls, body */
+  --text-sm: 0.8125rem; /* sources */
+  --text-xs: 0.6875rem; /* chips, meta */
+  --leading: 1.65;
+  --leading-tight: 1.3;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+
+  --radius-card: 14px;
+  --radius-chip: 5px;
+  --radius-pill: 999px;
+  --shadow: none;
+  --border: 1px solid var(--line);
+
+  --control-h: 36px;
+  /* Grows with Chrome's font size: two text lines (1.3 line-height) plus padding and the border. */
+  --topbar-h: max(52px, calc(17px + 1.3 * (0.6875rem + 0.875rem)));
+  --icon-button: 32px;
+  --speed: 160ms;
+
+  accent-color: var(--accent);
+  scrollbar-color: var(--line) transparent;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* `display` on the buttons below would otherwise show the hidden ones. */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  height: 100%;
 }
 
 body {
   margin: 0;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  /* Without minmax the column grows to the long tab title's width, past the panel's. */
+  grid-template-columns: minmax(0, 1fr);
+  font: var(--text-md) / var(--leading) var(--font);
+  color: var(--fg);
+  background: var(--bg);
 }
 
-header {
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+svg.filled {
+  fill: currentColor;
+  stroke: none;
+}
+
+/* ---- Buttons ---- */
+
+.primary,
+.danger,
+.secondary,
+.busy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-block-size: var(--control-h);
+  min-inline-size: 96px;
+  padding: 0 var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.busy {
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: progress;
+}
+
+.danger {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.secondary {
+  min-inline-size: 0;
+  min-block-size: 30px;
+  padding: 0 var(--space-3);
+  background: var(--surface-2);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: var(--icon-button);
+  min-block-size: var(--icon-button);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+@media (hover: hover) {
+  .primary:not(:disabled):hover {
+    background: color-mix(in oklab, var(--accent), var(--fg) 12%);
+  }
+  .danger:not(:disabled):hover {
+    background: color-mix(in oklab, var(--danger-soft), var(--danger) 12%);
+  }
+  .secondary:not(:disabled):hover,
+  .icon-button:not(:disabled):hover {
+    background: var(--surface-2);
+    color: var(--fg);
+  }
+}
+
+.spinner {
+  inline-size: 14px;
+  block-size: 14px;
+  border: 2px solid currentColor;
+  border-inline-end-color: transparent;
+  border-radius: 50%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .spinner {
+    animation: spin 0.8s linear infinite;
+  }
+}
+
+@keyframes spin {
+  to {
+    rotate: 1turn;
+  }
+}
+
+/* ---- Top bar ---- */
+
+.topbar {
+  grid-row: 1;
+  /* Fixed, so that the settings sheet and its backdrop can start right below it. */
+  block-size: var(--topbar-h);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--line);
+  gap: 2px;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border-block-end: var(--border);
+}
+
+/* The one action of the state, beside the icon buttons. */
+.actions {
+  display: flex;
+  margin-inline: var(--space-2) var(--space-1);
+}
+
+.compact {
+  min-block-size: 30px;
+  min-inline-size: 64px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
 }
 
 .target {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  min-inline-size: 0;
+  line-height: var(--leading-tight);
 }
 
-.target .label {
-  font-size: 11px;
-  color: var(--muted);
-}
-
-#target-title {
+.target-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 600;
+}
+
+/* ---- Stream: subtitles and the interim line ---- */
+
+/* Its row is fixed: with the banner out of the flow, auto-placement would move it up a row. */
+.stream {
+  grid-row: 3;
+  overflow-y: auto;
+  container-type: scroll-state;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) 0;
+}
+
+.segmented {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
+.segmented legend {
+  margin-block-end: 6px;
+  padding: 0;
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.segmented .track {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 3px;
+  /* Two lines per option: a pill would pinch them. */
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+}
+
+.segmented label {
+  position: relative;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  min-block-size: 30px;
+  padding-block: 6px;
+  line-height: 1.35;
+  border-radius: calc(var(--radius-card) - 3px);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.option-desc {
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.segmented input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.segmented label:has(:checked) {
+  background: var(--bg);
+  color: var(--fg);
+  font-weight: 600;
+  outline: 1px solid var(--line);
+}
+
+.segmented label:has(:focus-visible) {
+  outline: 2px solid var(--accent);
+}
+
+.segmented:has(:disabled) label {
+  cursor: default;
+}
+
+/* The choice is still information while it cannot be changed: only the other one fades. */
+.segmented:has(:disabled) label:not(:has(:checked)) {
+  opacity: 0.6;
+}
+
+/* Until the first subtitle: a large 開始 for those who have not found the one in the top bar. */
+.hero {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-4);
+  margin: auto var(--space-3);
+  padding-block: var(--space-5);
+  text-align: center;
+}
+
+.hero-text {
+  margin: 0;
+  max-inline-size: 26em;
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+.hero .primary {
+  min-inline-size: 160px;
+  min-block-size: 44px;
+  font-size: var(--text-lg);
+}
+
+/* Gone once something is heard in a run (data-heard), so that it does not flash back between the
+   first final and its subtitle; the first words (interim) take its place. */
+.stream:is([data-heard], :has(.utterance)) .hero {
+  display: none;
+}
+
+.utterances {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.utterance {
+  --lang: var(--en);
+  --lang-ink: var(--en-ink);
+  position: relative;
+  padding: 10px var(--space-3) 11px 18px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.utterance[data-lang='ja'] {
+  --lang: var(--ja);
+  --lang-ink: var(--ja-ink);
+}
+
+.utterance::before {
+  content: '';
+  position: absolute;
+  inset-block: 12px;
+  inset-inline-start: 7px;
+  inline-size: 3px;
+  border-radius: 2px;
+  background: var(--lang);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .utterance {
+    transition:
+      opacity var(--speed) ease,
+      translate var(--speed) ease;
+    @starting-style {
+      opacity: 0;
+      translate: 0 6px;
+    }
+  }
+}
+
+.source > :last-child {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.translation {
+  overflow-wrap: anywhere;
+}
+
+.source {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.lang {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--radius-chip);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+  color: var(--lang-ink);
+  background: color-mix(in oklab, var(--lang) 18%, transparent);
+}
+
+.translation {
+  margin: 3px 0 0;
+  font-size: var(--text-lg);
+  font-weight: 500;
+  line-height: var(--leading);
+}
+
+.translation.pending {
+  font-size: var(--text-sm);
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.translation.pending::after {
+  content: '…';
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .translation.pending {
+    animation: breathe 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.65;
+  }
+}
+
+.translation.error {
+  font-size: var(--text-sm);
+  font-weight: 400;
+  color: var(--danger);
+}
+
+.translation.error::before {
+  content: '⚠︎ ';
+}
+
+.interim {
+  padding: var(--space-2) var(--space-3) var(--space-2) 18px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-card);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.interim:empty {
+  display: none;
+}
+
+.interim::after {
+  content: '';
+  display: inline-block;
+  inline-size: 2px;
+  block-size: 1em;
+  margin-inline-start: 2px;
+  vertical-align: -2px;
+  background: var(--muted);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .interim::after {
+    animation: breathe 1s steps(2) infinite;
+  }
+}
+
+/* Only while the list is scrolled up from its end (container scroll-state queries, Chrome 144+). */
+.to-latest {
+  position: sticky;
+  inset-block-end: var(--space-3);
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-block-size: 30px;
+  padding: 0 var(--space-3) 0 var(--space-2);
+  border: var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  visibility: hidden;
+  opacity: 0;
+}
+
+@container scroll-state(scrollable: bottom) {
+  .to-latest {
+    visibility: visible;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .to-latest {
+    transition:
+      opacity var(--speed) ease,
+      visibility var(--speed);
+  }
+}
+
+/* ---- Banner: messages and download progress, below the top bar ---- */
+
+.banner {
+  grid-row: 2;
+  display: grid;
+  gap: 6px;
+  padding: var(--space-2) var(--space-4);
+  border-block-end: var(--border);
+  background: var(--surface);
+}
+
+/*
+ * Nothing to show, or only what the top bar says already: kept as a live region for screen
+ * readers (display: none would drop its announcements), but out of sight and out of the layout.
+ */
+.banner[data-quiet] {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  padding: 0;
+  border: 0;
+}
+
+.message {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+body[data-state='error'] .banner {
+  background: var(--danger-soft);
+}
+
+body[data-state='error'] .message {
+  color: var(--danger);
+}
+
+body[data-state='error'] .message::before {
+  content: '⚠︎ ';
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.dot {
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--line);
+}
+
+body[data-state='ready'] .dot {
+  background: var(--accent);
+}
+
+body:is([data-state='preparing'], [data-state='starting'], [data-state='stopping']) .dot {
+  background: var(--busy);
+}
+
+body[data-state='running'] .dot {
+  background: var(--rec);
+}
+
+body[data-state='error'] .dot {
+  background: var(--danger);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  body[data-state='running'] .dot {
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    outline: 0 solid color-mix(in oklab, var(--rec) 40%, transparent);
+  }
+  50% {
+    outline: 5px solid transparent;
+  }
+}
+
+/* ---- Settings sheet ---- */
+
+/*
+ * A popover, not a modal dialog: it drops from below the top bar, which stays visible and usable
+ * (開始 / 停止, and the settings button closes it again). The backdrop dims the subtitles only.
+ */
+.sheet {
+  position: fixed;
+  inset: var(--topbar-h) 0 auto;
+  inline-size: 100%;
+  max-block-size: calc(100vh - var(--topbar-h) - var(--space-5));
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  border: var(--border);
+  border-block-start: 0;
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.sheet::backdrop {
+  inset: var(--topbar-h) 0 0;
+  background: oklch(0% 0 0 / 0.35);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sheet,
+  .sheet::backdrop {
+    transition:
+      translate 200ms ease,
+      opacity 200ms ease,
+      overlay 200ms allow-discrete,
+      display 200ms allow-discrete;
+  }
+
+  .sheet:not(:popover-open) {
+    translate: 0 -12px;
+    opacity: 0;
+  }
+
+  .sheet:not(:popover-open)::backdrop {
+    opacity: 0;
+  }
+
+  @starting-style {
+    .sheet:popover-open {
+      translate: 0 -12px;
+      opacity: 0;
+    }
+
+    .sheet:popover-open::backdrop {
+      opacity: 0;
+    }
+  }
+}
+
+.sheet-head {
+  position: sticky;
+  inset-block-start: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border-block-end: var(--border);
+  background: var(--bg);
+}
+
+.sheet-head h2 {
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+.sheet-body {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  font-size: var(--text-sm);
+}
+
+.hint {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.dev {
+  display: grid;
+  gap: var(--space-2);
+  border-block-start: var(--border);
+  padding-block-start: var(--space-3);
+}
+
+.dev[open] {
+  padding-block-end: var(--space-2);
+}
+
+.dev summary {
+  cursor: pointer;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.sheet textarea {
+  inline-size: 100%;
+  padding: var(--space-2);
+  border: var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font: var(--text-xs) / 1.5 var(--font-mono);
+  resize: vertical;
 }
 
 .row {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.controls {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--line);
-}
-
-.engine {
-  margin-left: auto;
-}
-
-.message {
-  margin-top: 6px;
-  font-size: 12px;
-}
-
-.message.error {
-  color: var(--error);
-}
-
-.readiness {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 2px 8px;
-  margin: 6px 0 0;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.readiness dd {
-  margin: 0;
-}
-
-#subtitles {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px 12px;
-}
-
-#utterances {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.utterance {
-  padding: 6px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.lang {
-  display: inline-block;
-  min-width: 2em;
-  padding: 0 4px;
-  border-radius: 3px;
-  font-size: 11px;
-  text-align: center;
-  background: var(--line);
-}
-
-.translation {
-  margin-top: 2px;
-  font-size: 15px;
-  font-weight: 500;
-}
-
-.translation.pending {
-  color: var(--muted);
-  font-weight: normal;
-}
-
-.translation.error {
-  color: var(--error);
-  font-size: 12px;
-  font-weight: normal;
-}
-
-.interim {
-  min-height: 1.4em;
-  padding-top: 6px;
-  font-size: 12px;
-  font-style: italic;
-  color: var(--muted);
-}
-
-#debug {
-  max-height: 45vh;
-  overflow-y: auto;
-  padding: 6px 12px;
-  border-top: 1px solid var(--line);
-  font-size: 12px;
-}
-
-#debug h3 {
-  margin: 8px 0 4px;
-  font-size: 12px;
-}
-
-.latency {
-  margin: 6px 0;
-}
-
-.settings {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-  align-items: center;
-}
-
-.settings input[type='number'] {
-  width: 5.5em;
-}
-
-.settings .note {
-  color: var(--muted);
-}
-
-.rejected {
-  margin: 0;
-  padding-left: 1.4em;
-  max-height: 10em;
-  overflow-y: auto;
-}
-
-#debug textarea {
-  width: 100%;
-  box-sizing: border-box;
-  font: 11px ui-monospace, monospace;
-  margin: 4px 0;
+  gap: var(--space-2);
 }

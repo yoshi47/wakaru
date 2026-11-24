@@ -1,17 +1,21 @@
 /**
- * The panel's states. `starting` (capturing the tab and starting the recognizers) has 閉じる only,
- * so that a second click cannot capture the tab twice.
+ * The panel's states. There is no prepare button: the panel prepares by itself when nothing needs
+ * downloading, and otherwise 開始 prepares first (its click is the user gesture that downloads
+ * need). `starting` (capturing the tab and starting the recognizers) has 閉じる only, so that a
+ * second click cannot capture the tab twice.
  */
 export type State = 'idle' | 'preparing' | 'ready' | 'starting' | 'running' | 'stopping' | 'error';
 
 export type Event =
+  /** Preparing without a click: everything needed is already on this machine. */
   | 'prepare'
   | 'prepared'
-  /** Back to idle with "もう一度押してください". */
+  /** Back to idle: 開始 tries again. */
   | 'prepareFailed'
   | 'engineChanged'
   /** The selected engine is no longer usable (PLaMo failed to load again after a crash). */
   | 'lost'
+  /** 開始: from ready it starts; from idle and error it prepares first. */
   | 'start'
   | 'started'
   | 'startFailed'
@@ -19,19 +23,18 @@ export type Event =
   /** The session ended: after 停止, or by itself when the captured tab ended. */
   | 'ended'
   /** From any state: the recognizer stopped for good, for example. */
-  | 'fail'
-  | 'reset';
+  | 'fail';
 
-export type Control = 'prepare' | 'start' | 'stop' | 'engine' | 'clear' | 'reset' | 'close';
+export type Control = 'start' | 'stop' | 'engine' | 'clear' | 'close';
 
 const TRANSITIONS: Record<State, Partial<Record<Event, State>>> = {
-  idle: { prepare: 'preparing', engineChanged: 'idle' },
+  idle: { prepare: 'preparing', start: 'preparing', engineChanged: 'idle' },
   preparing: { prepared: 'ready', prepareFailed: 'idle' },
   ready: { start: 'starting', engineChanged: 'idle', lost: 'idle' },
   starting: { started: 'running', startFailed: 'ready', ended: 'ready' },
   running: { stop: 'stopping', ended: 'ready' },
   stopping: { ended: 'ready' },
-  error: { reset: 'idle' },
+  error: { start: 'preparing', engineChanged: 'idle' },
 };
 
 /** The state after `event`, or null when `state` does not accept it. */
@@ -42,11 +45,11 @@ export function next(state: State, event: Event): State | null {
 
 /** The controls each state enables. */
 export const CONTROLS: Record<State, readonly Control[]> = {
-  idle: ['prepare', 'engine', 'close'],
+  idle: ['start', 'engine', 'clear', 'close'],
   preparing: ['close'],
   ready: ['start', 'engine', 'clear', 'close'],
   starting: ['close'],
   running: ['stop', 'clear', 'close'],
   stopping: ['close'],
-  error: ['reset', 'close'],
+  error: ['start', 'engine', 'clear', 'close'],
 };
