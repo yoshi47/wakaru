@@ -2,5 +2,5 @@
   <rect x="0" y="0" width="128" height="128" rx="28" fill="#046850"/>
   <!-- Same two bubbles as icon.svg without the letters, drawn larger so they read at 16px -->
   <path d="M16 16 h56 a14 14 0 0 1 14 14 v28 a14 14 0 0 1 -14 14 h-30 l-18 16 v-16 h-8 a14 14 0 0 1 -14 -14 v-28 a14 14 0 0 1 14 -14 z" fill="#FCFAF7"/>
-  <path d="M56 50 h52 a14 14 0 0 1 14 14 v26 a14 14 0 0 1 -14 14 h-4 v16 l-18 -16 h-30 a14 14 0 0 1 -14 -14 v-26 a14 14 0 0 1 14 -14 z" fill="#D98A2E" stroke="#046850" stroke-width="7"/>
+  <path d="M56 50 h52 a14 14 0 0 1 14 14 v26 a14 14 0 0 1 -14 14 h-4 v16 l-18 -16 h-30 a14 14 0 0 1 -14 -14 v-26 a14 14 0 0 1 14 -14 z" fill="#FFD9A8" stroke="#046850" stroke-width="7"/>
 </svg>
