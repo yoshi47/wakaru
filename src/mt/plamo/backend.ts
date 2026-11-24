@@ -111,6 +111,11 @@ export class PlamoBackend implements TranslatorBackend {
     return this.#loaded !== null && !this.#loaded.crashed;
   }
 
+  /** Loading the model again after a crash: it will be ready again unless that fails. */
+  get reloading(): boolean {
+    return this.#reloading;
+  }
+
   /** What the status shows: `WebGPU (apple metal-3)`, `CPU（遅い）`, or null before loading. */
   get device(): string | null {
     if (!this.#loaded) return null;
