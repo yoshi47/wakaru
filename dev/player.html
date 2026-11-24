@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8" />
+<title>wakaru test player</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 24px; }
+  li.playing { font-weight: bold; }
+  li.done { opacity: 0.5; }
+</style>
+<h1>wakaru テスト音声</h1>
+<p>
+  <button id="play" type="button">再生</button>
+  <button id="stop" type="button">止める</button>
+  発話の間隔 <input id="gap" type="number" value="1.5" step="0.5" min="0" style="width: 4em" /> 秒
+</p>
+<ol id="list"></ol>
+<script type="module">
+  const utterances = await (await fetch('./utterances.json')).json();
+  const files = await (await fetch('./audio/index.json')).json();
+  const list = document.getElementById('list');
+  const items = utterances.map((u) => {
+    const li = document.createElement('li');
+    li.textContent = `[${u.lang}] ${u.text}`;
+    list.append(li);
+    return li;
+  });
+
+  const audio = new Audio();
+  let stopped = false;
+
+  const playOne = (src) =>
+    new Promise((resolve, reject) => {
+      audio.src = src;
+      audio.onended = resolve;
+      audio.onerror = () => reject(new Error(`cannot play ${src}`));
+      audio.play().catch(reject);
+    });
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  document.getElementById('play').onclick = async () => {
+    stopped = false;
+    items.forEach((li) => (li.className = ''));
+    const gapMs = Number(document.getElementById('gap').value) * 1000;
+    for (const [i, file] of files.entries()) {
+      if (stopped) break;
+      items[i].className = 'playing';
+      // performance.timeOrigin + now() gives a wall clock to compare with the panel's log.
+      console.log(`start ${file} at ${Math.round(performance.timeOrigin + performance.now())}`);
+      await playOne(`./audio/${file}`);
+      items[i].className = 'done';
+      await sleep(gapMs);
+    }
+  };
+  document.getElementById('stop').onclick = () => {
+    stopped = true;
+    audio.pause();
+  };
+</script>
+</html>

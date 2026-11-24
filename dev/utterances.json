@@ -1,0 +1,21 @@
+[
+  { "lang": "ja", "text": "来週のリリースについて、スケジュールを確認させてください。" },
+  { "lang": "en", "text": "Sure, we are planning to ship the new feature on Wednesday." },
+  { "lang": "ja", "text": "了解です。テストはもう終わっていますか？" },
+  { "lang": "en", "text": "Most of the tests are done, but we still need to check the payment flow." },
+  { "lang": "ja", "text": "決済フローのレビューは、田中さんにお願いしています。" },
+  { "lang": "en", "text": "Okay." },
+  { "lang": "ja", "text": "はい。" },
+  { "lang": "en", "text": "Can you share the dashboard link in Slack after this meeting?" },
+  { "lang": "ja", "text": "わかりました。あとでSlackに共有します。" },
+  { "lang": "en", "text": "I think we should push back the deadline if QA can't finish by Friday." },
+  { "lang": "ja", "text": "その件は一旦持ち帰って、チーム内で検討させてください。" },
+  { "lang": "en", "text": "Just to clarify, are we talking about the mobile app or the web version?" },
+  { "lang": "ja", "text": "ウェブ版の方です。モバイルは来月対応予定です。" },
+  { "lang": "en", "text": "That makes sense. Let's circle back on this next week." },
+  { "lang": "ja", "text": "すみません、ちょっと音声が途切れていました。もう一度お願いできますか？" },
+  { "lang": "en", "text": "No worries. I said the API rate limit is causing the timeout errors." },
+  { "lang": "ja", "text": "なるほど、それならキャッシュを入れれば解決しそうですね。" },
+  { "lang": "en", "text": "Exactly. Can you take the action item for that?" },
+  { "lang": "ja", "text": "承知しました。今週中に対応します。" }
+]
