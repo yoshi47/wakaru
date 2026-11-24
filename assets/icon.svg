@@ -4,6 +4,6 @@
   <path d="M24 14 h48 a12 12 0 0 1 12 12 v24 a12 12 0 0 1 -12 12 h-30 l-14 12 v-12 h-4 a12 12 0 0 1 -12 -12 v-24 a12 12 0 0 1 12 -12 z" fill="#FCFAF7"/>
   <text x="46" y="51" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-weight="700" font-size="34" fill="#005877">A</text>
   <!-- Japanese bubble: lower right, tail toward the bottom right -->
-  <path d="M60 56 h44 a12 12 0 0 1 12 12 v22 a12 12 0 0 1 -12 12 h-4 v12 l-14 -12 h-26 a12 12 0 0 1 -12 -12 v-22 a12 12 0 0 1 12 -12 z" fill="#D98A2E" stroke="#046850" stroke-width="5"/>
-  <text x="82" y="91" text-anchor="middle" font-family="Hiragino Sans, Hiragino Kaku Gothic ProN, sans-serif" font-weight="700" font-size="30" fill="#FFFFFF">あ</text>
+  <path d="M60 56 h44 a12 12 0 0 1 12 12 v22 a12 12 0 0 1 -12 12 h-4 v12 l-14 -12 h-26 a12 12 0 0 1 -12 -12 v-22 a12 12 0 0 1 12 -12 z" fill="#FFD9A8" stroke="#046850" stroke-width="5"/>
+  <text x="82" y="91" text-anchor="middle" font-family="Hiragino Sans, Hiragino Kaku Gothic ProN, sans-serif" font-weight="700" font-size="30" fill="#804300">あ</text>
 </svg>
