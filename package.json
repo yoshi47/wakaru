@@ -6,6 +6,7 @@
   "description": "Chrome extension: on-device live transcription and ja/en translation for meetings",
   "scripts": {
     "build": "pnpm typecheck && vite build",
+    "build:harness": "node dev/gen-overlap-audio.mjs && pnpm typecheck && WAKARU_HARNESS=1 vite build && mkdir -p dist/harness-audio && cp dev/audio/overlap/*.wav dev/overlap.json dist/harness-audio/",
     "dev": "vite build --watch",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json"

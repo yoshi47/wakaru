@@ -7,6 +7,12 @@ export type Settings = {
   stallMs: number;
   /** Mix -60 dBFS noise into the recognized audio (Task 1-6). */
   noise: boolean;
+  /** The silence that closes a paragraph just started (see Paragrapher). */
+  paragraphMaxGapMs: number;
+  /** The silence that closes a paragraph at paragraphMaxTokens. */
+  paragraphMinGapMs: number;
+  /** A paragraph is not extended past this many estimated tokens. */
+  paragraphMaxTokens: number;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -16,6 +22,9 @@ export const DEFAULT_SETTINGS: Settings = {
   enShortMinConfidence: 0.6,
   stallMs: 1200,
   noise: true,
+  paragraphMaxGapMs: 3000,
+  paragraphMinGapMs: 1000,
+  paragraphMaxTokens: 80,
 };
 
 /**

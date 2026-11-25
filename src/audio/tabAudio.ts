@@ -19,6 +19,18 @@ export type TabAudioOptions = {
 
 export class CaptureBusyError extends Error {}
 
+/** White noise at about -60 dBFS into `dst`, for as long as `ctx` runs (see TabAudioOptions.noise). */
+export function addNoise(ctx: AudioContext, dst: AudioNode): void {
+  const buffer = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * 0.001;
+  const noise = ctx.createBufferSource();
+  noise.buffer = buffer;
+  noise.loop = true;
+  noise.connect(dst);
+  noise.start();
+}
+
 export async function startTabAudio(tabId: number, opts: TabAudioOptions): Promise<TabAudio> {
   const captured = await chrome.tabCapture.getCapturedTabs();
   if (captured.some((c) => c.tabId === tabId && (c.status === 'active' || c.status === 'pending'))) {
@@ -43,14 +55,7 @@ export async function startTabAudio(tabId: number, opts: TabAudioOptions): Promi
   if (opts.noise) {
     const dst = ctx.createMediaStreamDestination();
     input.connect(dst);
-    const buffer = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * 0.001;
-    const noise = ctx.createBufferSource();
-    noise.buffer = buffer;
-    noise.loop = true;
-    noise.connect(dst);
-    noise.start();
+    addNoise(ctx, dst);
     track = dst.stream.getAudioTracks()[0] ?? source;
   }
 

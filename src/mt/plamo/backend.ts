@@ -152,7 +152,12 @@ export class PlamoBackend implements TranslatorBackend {
     await this.#enqueue(() => this.#load(model, epoch));
   }
 
-  async translate(text: string, from: Lang, to: Lang, signal: AbortSignal): Promise<string> {
+  /** On the GPU: on the CPU one translation takes seconds. */
+  get fast(): boolean {
+    return this.ready && this.#loaded?.gpu != null;
+  }
+
+  async translate(text: string, from: Lang, to: Lang, signal: AbortSignal, { key }: { key: number }): Promise<string> {
     // Fails at once while reloading after a crash: the queue shows the source alone meanwhile.
     if (!this.ready) throw new Error(this.#reloading ? 'PLaMo を読み込み直しています' : 'PLaMo が準備されていません');
     // The queue gives up on a job after its timeout and starts the next one, while wllama ends the
@@ -166,7 +171,7 @@ export class PlamoBackend implements TranslatorBackend {
       const instance = this.#loaded;
       if (!instance || instance.crashed) throw new Error('PLaMo を読み込み直しています');
       const result = await this.#complete(instance, {
-        prompt: buildPrompt(this.#history.pairs, { text, from, to }),
+        prompt: buildPrompt(this.#history.pairsExcept(key), { text, from, to }),
         max_tokens: Math.min(MAX_TOKENS, estimateTokens(text) * 3 + 64),
         temperature: 0,
         stop: [STOP],
@@ -177,10 +182,12 @@ export class PlamoBackend implements TranslatorBackend {
       const choice = result.choices?.[0];
       const translation = (choice?.text ?? '').trim();
       if (choice?.finish_reason === 'length') {
-        // Usually a word repeated until max_tokens: shown, but kept out of the next prompts.
+        // Usually a word repeated until max_tokens: shown, but kept out of the next prompts. So is
+        // the paragraph's earlier version: left alone, it would stand for the whole paragraph.
         this.#onLog(`plamo cut at max_tokens: "${text}"`);
+        this.#history.remove(key);
       } else {
-        this.#history.add({ text, translation, from, to });
+        this.#history.add({ text, translation, from, to }, key);
       }
       return translation;
     } finally {

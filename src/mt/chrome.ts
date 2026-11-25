@@ -25,6 +25,8 @@ export class ChromeBackend implements TranslatorBackend {
     return this.#translators.size === 2;
   }
 
+  readonly fast = true;
+
   async translate(text: string, from: Lang, to: Lang, signal: AbortSignal): Promise<string> {
     const translator = this.#translators.get(`${from}>${to}`);
     if (!translator) throw new Error(`Chrome の翻訳モデル（${from}→${to}）が準備されていません`);

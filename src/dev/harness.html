@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>wakaru harness</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 16px; }
+      pre { font-size: 12px; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <p>
+      <button id="run" type="button">実行</button>
+      <span id="status">idle</span>
+      （<code>?ids=monologue-en,turn-gap&amp;engine=plamo|chrome</code>）
+    </p>
+    <pre id="log"></pre>
+    <script type="module" src="./harness.ts"></script>
+  </body>
+</html>
