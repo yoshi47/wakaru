@@ -64,19 +64,24 @@ describe('Paragrapher', () => {
     expect(p.silences).toEqual([4000]);
   });
 
-  it('closes a paragraph after a shorter silence as it gets longer', () => {
-    // 'Okay so' is 2 tokens: the gap is still about maxGapMs. 70 tokens: close to minGapMs.
-    const short = make();
-    short.add(piece('en', 'Okay so', 0));
-    short.heard(100);
-    short.heard(2000); // 1.9s of silence
-    expect(short.add(piece('en', 'the next thing', 2500)).kind).toBe('append');
-
-    const long = make();
-    long.add(piece('en', 'word '.repeat(56).trim(), 0)); // 280 characters: 70 tokens
-    long.heard(100);
-    long.heard(2000);
-    expect(long.add(piece('en', 'the next thing', 2500)).closed).toBe('gap');
+  it('keeps maxGapMs up to half the limit, then closes after a shorter silence as it gets longer', () => {
+    /** A paragraph of `chars` characters (chars / 4 tokens), and whether `silence` closes it. */
+    const closes = (chars: number, silence: number) => {
+      const p = make();
+      p.add(piece('en', 'w'.repeat(chars), 0));
+      p.heard(100);
+      p.heard(100 + silence);
+      return p.add(piece('en', 'next', silence + 500)).closed === 'gap';
+    };
+    // 38 tokens, as the paragraph of dev/overlap.json's monologue-en: a 1.8s pause measured 2117ms.
+    expect(closes(152, 2117)).toBe(false);
+    expect(closes(152, 3000)).toBe(true);
+    // 60 tokens: halfway from maxGapMs to minGapMs (2000ms).
+    expect(closes(240, 1999)).toBe(false);
+    expect(closes(240, 2000)).toBe(true);
+    // 76 tokens: close to minGapMs (1200ms).
+    expect(closes(304, 1199)).toBe(false);
+    expect(closes(304, 1200)).toBe(true);
   });
 
   it('does not take a silence after the piece for one before it (a decision that came late)', () => {

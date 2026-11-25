@@ -105,10 +105,15 @@ export class Paragrapher {
     this.#open = null;
   }
 
-  /** The silence that closes `open` now: shorter as it gets longer. */
+  /**
+   * The silence that closes `open` now: maxGapMs up to half of maxTokens, then shorter as it gets
+   * longer. Why not from the start: a pause of 1.8s, measured as 2.0 to 2.1s, split a 38-token
+   * paragraph one time in four, and its last piece translated alone into a fragment.
+   */
   #gapMs(open: Open): number {
     const { maxGapMs, minGapMs, maxTokens } = this.#opts;
-    return maxGapMs - (maxGapMs - minGapMs) * Math.min(1, open.tokens / maxTokens);
+    const half = maxTokens / 2;
+    return maxGapMs - (maxGapMs - minGapMs) * Math.min(1, Math.max(0, open.tokens - half) / half);
   }
 
   /**
