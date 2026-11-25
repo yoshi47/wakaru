@@ -71,8 +71,8 @@ en FINAL "Just for the anything that's a price or a total amount so I'm finishin
 ### 既定値（`src/settings.ts`、仮の値）
 
 - `paragraphMaxGapMs`: 3000、`paragraphMinGapMs`: 1000
-  - 測った無音は、本当の無音より短く出る見込み（最後の途中経過の直しと、話し始めの最初の途中経過が遅れる分だけ縮む）
-  - `dev/overlap.json` の段落の場面と、次の会議のログ（`silence …ms`）で決め直す
+  - 測った無音は、本当の無音より 0〜0.55 秒長く出た（下の検証結果）。途中経過は話し終わりより前に変化が止まり、話し始めより後に最初の変化が来るため
+  - 次の会議のログ（`silence …ms`）で決め直す
 - `paragraphMaxTokens`: 80。日本語で80文字、英語で約55語。文字数で一律に切ると、日本語の段落だけ4倍のトークンになる
   - 訳し直し1回は GPU で1〜1.5秒の見込み（今回のログで約25トークンが 413ms）。キューの時間切れ 5000ms に収まる
 
@@ -110,9 +110,36 @@ en FINAL "Just for the anything that's a price or a total amount so I'm finishin
 ### 確認
 
 1. `pnpm test`、`pnpm typecheck`、`pnpm build`
-2. `node dev/gen-overlap-audio.mjs` で素材を作り、`dev/overlap.html` の段落の場面（`monologue-en`、`monologue-ja`、`turn-gap`、`turn-nogap`、`okay-inside`）と相づちの場面（`backchannel-ja`、`backchannel-en`）を流す。ログの `silence …ms` と、入れた間（0.8〜1.8 秒、3 秒、0.3 秒）を並べて、測った無音と本当の無音の差を見る
+2. `pnpm build:harness` で検証用ページ（`src/dev/harness.ts`）をビルドし、`dev/overlap.json` の場面を Session に流す。タブ音声を取り込むにはアイコンのクリックが要るので、音声ファイルを AudioContext から同じ認識器・Arbiter・Paragrapher・翻訳に流す。拡張のページ（`chrome-extension://…/dev/harness.html`）として開くか、`dist` を配信して Web ページとして開く（`?engine=chrome`。PLaMo のモデルは拡張の OPFS にあるため）
 3. 既存の `dev/player.html`（19発話、日英交互）で、二重表示・欠けが増えていないこと
 4. 実際の会議でもう一度使い、ログから既定値を見直す
+
+### 検証結果（2026-11-25、Chrome 157、検証用ページを Web ページとして、Chrome 翻訳で）
+
+`dev/overlap.json` の11場面を1回ずつ流した。
+
+- `monologue-en`（1人の英語、間 0.8〜1.8 秒の5断片）: 1段落。断片が足されるたびに訳し直し、最後の訳は1文になった（3回流して3回とも同じ）
+- `monologue-ja`: 1段落。ただし「クライアント側のUIと」が消えた（下の既知の不具合）
+- `turn-gap`（3 秒空けて別の声）: 2段落（`closed: gap`、2回とも同じ）
+- `turn-nogap`（0.3 秒で別の声）、`okay-inside`: Chrome 自身が1つの FINAL にまとめ、1段落
+- 日英が重なる既存の場面（`ja-en`、`en-ja`、`same-start`、`ja-ja`、`backchannel-*`）: `docs/plans/2026-11-20-mvp.md` の「Task 3.5 の結果」の Arbiter 変更後と同じ（日英の重なりは両方採用、「Sure」「決済フロー」の欠け、相づちと同時の話し始めは片方だけ、日本語どうしは混ざった1文）。言語が替わるので段落は1発話ずつ
+- Chrome 翻訳の訳し直しは1回 6〜65ms
+
+入れた間と、測った無音（`silence …ms`）:
+
+| 入れた間 | 測った無音 |
+|---|---|
+| 0.8 秒 | 1200ms |
+| 1.2 秒 | 1440ms、1584ms、1616ms、1744ms |
+| 1.5 秒 | 1499ms、1738ms、1739ms、1797ms |
+| 1.8 秒 | 1856ms、1984ms、2037ms、2043ms |
+| 3.0 秒 | 3558ms、3559ms |
+
+測った無音は本当の無音より長く出る。1.8 秒の間は、段落が約38トークンのときの閾値（2050ms）をわずかに下回って足された。長くなった段落では、2秒前後の言いよどみで分かれうる。会議のログを見て、閾値の縮め方を緩める（例: 上限の半分までは縮めない）かを決める。
+
+### 既知の不具合（段落とは別、未対応）
+
+STALL の後に来た本物の FINAL が、確定済みの頭の後に続きを持つと、その続きが消える。StallFinalizer は続きを途中経過として持つ（`onRealFinal`）が、Chrome が FINAL の直後に送る空の途中経過で上書きされる。`monologue-ja` の「クライアント側のUIと」と、会議のログの `I priority QH gets` がこれで消えた。既存のテストは空の途中経過を再現していない。
 
 ---
 

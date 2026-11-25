@@ -15,6 +15,8 @@ export default defineConfig({
       input: {
         sidepanel: resolve(src, 'sidepanel/index.html'),
         background: resolve(src, 'background.ts'),
+        // `pnpm build:harness`: the page that plays dev/overlap.json into a Session.
+        ...(process.env.WAKARU_HARNESS ? { harness: resolve(src, 'dev/harness.html') } : {}),
       },
       output: {
         entryFileNames: '[name].js',

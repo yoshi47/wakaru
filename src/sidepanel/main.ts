@@ -1,4 +1,5 @@
 import { LangDetector } from '../asr/langDetect';
+import { startTabAudio } from '../audio/tabAudio';
 import type { PrepareProgress, TranslatorBackend } from '../mt/backend';
 import { ChromeBackend } from '../mt/chrome';
 import { PlamoBackend } from '../mt/plamo/backend';
@@ -334,7 +335,7 @@ async function startSession(): Promise<void> {
   const run = ++runs;
   try {
     session = await Session.start({
-      tabId: tab.tabId,
+      audio: (o) => startTabAudio(tab.tabId, o),
       settings,
       detect: detector.detect,
       backend,

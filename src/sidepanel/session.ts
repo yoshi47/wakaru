@@ -3,7 +3,7 @@ import { DualRecognizer } from '../asr/dualRecognizer';
 import { normalize } from '../asr/normalize';
 import { Paragrapher, type ParagraphUpdate } from '../asr/paragrapher';
 import { StallFinalizer } from '../asr/stallFinalizer';
-import { startTabAudio, type TabAudio } from '../audio/tabAudio';
+import type { TabAudio, TabAudioOptions } from '../audio/tabAudio';
 import type { TranslatorBackend } from '../mt/backend';
 import { TranslationQueue, type Outcome } from '../mt/queue';
 import type { Settings } from '../settings';
@@ -24,7 +24,8 @@ export type SessionEvents = {
 };
 
 export type SessionOptions = {
-  tabId: number;
+  /** Starts the audio to recognize: the target tab's (startTabAudio), or files (src/dev/harness.ts). */
+  audio: (opts: TabAudioOptions) => Promise<TabAudio>;
   settings: Settings;
   detect: LangDetect;
   backend: TranslatorBackend;
@@ -93,7 +94,7 @@ export class Session {
 
   static async start(opts: SessionOptions): Promise<Session> {
     const s = new Session(opts);
-    s.#audio = await startTabAudio(opts.tabId, {
+    s.#audio = await opts.audio({
       noise: opts.settings.noise,
       onEnded: () => void s.stop('キャプチャ対象のタブが終了しました。アイコンを押し直してください'),
     });
