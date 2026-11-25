@@ -468,6 +468,18 @@ button:disabled {
   }
 }
 
+/* An earlier version's translation, while the paragraph that grew is translated again. */
+.translation.stale {
+  color: var(--muted);
+}
+
+.translation .note {
+  margin-inline-start: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  color: var(--muted);
+}
+
 .translation.error {
   font-size: var(--text-sm);
   font-weight: 400;

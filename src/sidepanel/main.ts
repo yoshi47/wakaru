@@ -340,14 +340,12 @@ async function startSession(): Promise<void> {
       backend,
       events: {
         onInterim: (i) => subtitles.setInterim(i),
-        onDecision: (id, d) => {
-          if (id !== null && d.lang) subtitles.add(run, id, { ...d, lang: d.lang });
-        },
+        onParagraph: (jobId, u) => subtitles.show(run, jobId, u),
         onTranslation: (o) => {
           subtitles.setOutcome(run, o);
           if (o.kind === 'done') {
             const latency = Math.round(o.finishedAt - o.job.firstAt);
-            log(`translate #${o.job.id} ${Math.round(o.finishedAt - o.startedAt)}ms, from firstAt ${latency}ms`);
+            log(`translate #${o.job.id} (paragraph #${o.job.key}) ${Math.round(o.finishedAt - o.startedAt)}ms, from firstAt ${latency}ms`);
           } else if (o.kind === 'failed') {
             log(`translate #${o.job.id} failed: ${o.reason} ${o.message}`);
           } else {
@@ -383,6 +381,7 @@ buttons.stop.addEventListener('click', () => {
 buttons.clear.addEventListener('click', () => {
   subtitles.clear();
   backend.clearContext();
+  session?.closeParagraph();
   // The hero comes back, and the banner gives way to it.
   render();
   log('cleared');

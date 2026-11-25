@@ -46,5 +46,52 @@
       { "lang": "ja", "text": "すみません、ちょっと音声が途切れていました。" },
       { "lang": "ja", "voice": "second-ja", "text": "なるほど、それならキャッシュを入れれば解決しそうですね。", "afterPrevEndMs": -1500 }
     ]
+  },
+  {
+    "id": "monologue-en",
+    "title": "段落: 1 人の英語を 0.8〜1.8 秒の間で区切る（1 段落になるべき）",
+    "clips": [
+      { "lang": "en", "text": "All right, I finished the PR, and then" },
+      { "lang": "en", "text": "I realized that", "afterPrevEndMs": 1200 },
+      { "lang": "en", "text": "it was not the only issue that was happening.", "afterPrevEndMs": 1500 },
+      { "lang": "en", "text": "It was also happening on the document layouts,", "afterPrevEndMs": 800 },
+      { "lang": "en", "text": "for anything that's a price or a total amount.", "afterPrevEndMs": 1800 }
+    ]
+  },
+  {
+    "id": "monologue-ja",
+    "title": "段落: 1 人の日本語を 1.0〜1.8 秒の間で区切る（1 段落になるべき）",
+    "clips": [
+      { "lang": "ja", "text": "えっと、発注者取り消し機能なんですけど、" },
+      { "lang": "ja", "text": "クライアント側のUIと、", "afterPrevEndMs": 1200 },
+      { "lang": "ja", "text": "あとAPIの実装を", "afterPrevEndMs": 1500 },
+      { "lang": "ja", "text": "並行して進めています。", "afterPrevEndMs": 1000 },
+      { "lang": "ja", "text": "以上です。", "afterPrevEndMs": 1800 }
+    ]
+  },
+  {
+    "id": "turn-gap",
+    "title": "段落: 3 秒空けて別の声（2 段落になるべき）",
+    "clips": [
+      { "lang": "en", "text": "So that's it for my end, thank you." },
+      { "lang": "en", "voice": "Fred", "text": "Good morning everyone. For me today, I'll be working on two stories.", "afterPrevEndMs": 3000 }
+    ]
+  },
+  {
+    "id": "turn-nogap",
+    "title": "段落: 0.3 秒で別の声（1 段落になる。話者は区別しない）",
+    "clips": [
+      { "lang": "en", "text": "So that's it for my end, thank you." },
+      { "lang": "en", "voice": "Fred", "text": "Good morning everyone. For me today, I'll be working on two stories.", "afterPrevEndMs": 300 }
+    ]
+  },
+  {
+    "id": "okay-inside",
+    "title": "段落: 英語の話の途中に別の声の「Okay」（段落は閉じない）",
+    "clips": [
+      { "lang": "en", "text": "I'm finishing testing my fix today," },
+      { "lang": "en", "voice": "Fred", "text": "Okay.", "afterPrevEndMs": 400 },
+      { "lang": "en", "text": "and then I'll go back to the module sweep.", "afterPrevEndMs": 400 }
+    ]
   }
 ]

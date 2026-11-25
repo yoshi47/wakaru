@@ -1,6 +1,7 @@
 import { Arbiter, type Decision, type Final, type LangDetect } from '../asr/arbiter';
 import { DualRecognizer } from '../asr/dualRecognizer';
 import { normalize } from '../asr/normalize';
+import { Paragrapher, type ParagraphUpdate } from '../asr/paragrapher';
 import { StallFinalizer } from '../asr/stallFinalizer';
 import { startTabAudio, type TabAudio } from '../audio/tabAudio';
 import type { TranslatorBackend } from '../mt/backend';
@@ -11,8 +12,8 @@ import type { Lang } from '../shared/lang';
 export type SessionEvents = {
   /** The interim line: the longer of the two recognizers' interims, or null when there is none. */
   onInterim(interim: { lang: Lang; text: string } | null): void;
-  /** `id` is the translation job's id, or null when the utterance was dropped. */
-  onDecision(id: number | null, d: Decision): void;
+  /** A paragraph started or grew; `jobId` is the job translating this version of it. */
+  onParagraph(jobId: number, u: ParagraphUpdate): void;
   onTranslation(o: Outcome): void;
   /**
    * `reason` is null when the user stopped. `fatal`: a recognizer stopped for good, which the
@@ -41,7 +42,16 @@ export class Session {
   readonly #arbiter: Arbiter;
   readonly #stall: StallFinalizer;
   readonly #queue: TranslationQueue;
+  readonly #paragrapher: Paragrapher;
+  /** Whether pieces are put together into paragraphs: decided once, when the session starts. */
+  readonly #merge: boolean;
   readonly #interims = new Map<Lang, string>();
+  /**
+   * The last non-empty interim per language, to tell speech (an interim that changes) for the
+   * Paragrapher. Apart from #interims, which every decision clears: the same interim sent again
+   * after it would count as speech.
+   */
+  readonly #heard = new Map<Lang, { generation: number; text: string }>();
   #audio: TabAudio | null = null;
   #recognizer: DualRecognizer | null = null;
   #timer: ReturnType<typeof setInterval> | undefined;
@@ -63,8 +73,16 @@ export class Session {
       stallMs: settings.stallMs,
       onDiscard: (lang, text) => events.onLog(`${lang} STALL discarded (stuck start): "${text}"`),
     });
+    this.#merge = opts.backend.fast;
+    this.#paragrapher = new Paragrapher({
+      maxGapMs: settings.paragraphMaxGapMs,
+      minGapMs: settings.paragraphMinGapMs,
+      maxTokens: settings.paragraphMaxTokens,
+      merge: this.#merge,
+      onSilence: (ms) => events.onLog(`silence ${Math.round(ms)}ms`),
+    });
     this.#queue = new TranslationQueue({
-      translate: (job, signal) => opts.backend.translate(job.text, job.from, job.to, signal),
+      translate: (job, signal) => opts.backend.translate(job.text, job.from, job.to, signal, { key: job.key }),
       // After stop has given up waiting, late results no longer have a place to go.
       onOutcome: (o) => {
         if (!this.#ended) events.onTranslation(o);
@@ -93,7 +111,9 @@ export class Session {
       throw e;
     }
     s.#timer = setInterval(() => s.#tick(), TICK_MS);
-    opts.events.onLog(`started (noise=${opts.settings.noise}, playback=${s.#audio.playbackState})`);
+    opts.events.onLog(
+      `started (noise=${opts.settings.noise}, playback=${s.#audio.playbackState}, paragraphs=${s.#merge ? 'on' : 'off'})`,
+    );
     return s;
   }
 
@@ -115,13 +135,27 @@ export class Session {
     return this.#stopping;
   }
 
+  /** The clear button: what is said next starts a new subtitle. */
+  closeParagraph(): void {
+    this.#paragrapher.close();
+  }
+
   #onInterim(lang: Lang, generation: number, text: string): void {
-    this.#stall.update(lang, generation, text, performance.now());
+    const now = performance.now();
+    this.#stall.update(lang, generation, text, now);
     this.#interims.set(lang, text);
+    // DualRecognizer sends '' after every final: not speech, nor a change to remember.
+    const last = this.#heard.get(lang);
+    if (text.trim() && (last?.generation !== generation || last.text !== text)) {
+      this.#heard.set(lang, { generation, text });
+      this.#paragrapher.heard(now);
+    }
     this.#showInterim();
   }
 
   #onFinal(lang: Lang, generation: number, text: string): void {
+    // A result closed: the same words again (「はい」 after silence) are new speech.
+    this.#heard.delete(lang);
     if (!this.#stall.onRealFinal(lang, generation, text, performance.now())) {
       this.#events.onLog(`${lang} FINAL dropped (repeats a stalled interim, or empty): "${text}"`);
       return;
@@ -132,6 +166,7 @@ export class Session {
   #onEnd(lang: Lang, generation: number): void {
     const stalled = this.#stall.flush(lang, generation, performance.now());
     if (stalled) this.#push(stalled);
+    this.#heard.delete(lang);
     this.#interims.delete(lang);
     this.#showInterim();
   }
@@ -151,12 +186,13 @@ export class Session {
     for (const d of decisions) {
       const rejected = d.rejected.map((f) => `${f.lang}:"${f.text}"`).join(' ');
       this.#events.onLog(`decide ${d.lang ?? 'none'} "${d.text}"${rejected ? ` rejected ${rejected}` : ''}`);
-      let id: number | null = null;
-      if (d.lang) {
-        id = this.#nextId++;
-        this.#queue.push({ id, text: d.text, from: d.lang, to: other(d.lang), firstAt: d.firstAt });
-      }
-      this.#events.onDecision(id, d);
+      if (!d.lang) continue;
+      const u = this.#paragrapher.add({ lang: d.lang, text: d.text, firstAt: d.firstAt });
+      const { key, text } = u.paragraph;
+      this.#events.onLog(`paragraph #${key} ${u.kind}${u.closed ? ` (closed: ${u.closed})` : ''}`);
+      const id = this.#nextId++;
+      this.#queue.push({ id, key, text, from: d.lang, to: other(d.lang), firstAt: d.firstAt });
+      this.#events.onParagraph(id, u);
     }
     if (decisions.some((d) => d.lang)) {
       this.#interims.clear();

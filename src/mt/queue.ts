@@ -1,7 +1,10 @@
 import type { Lang } from '../shared/lang';
 
-/** One decided utterance to translate. `firstAt` is when its first final came. */
-export type Job = { id: number; text: string; from: Lang; to: Lang; firstAt: number };
+/**
+ * One version of a paragraph to translate. `key` is the paragraph's: a paragraph that grows is
+ * translated again, as a new job. `firstAt` is when the first final of the piece just added came.
+ */
+export type Job = { id: number; key: number; text: string; from: Lang; to: Lang; firstAt: number };
 
 /** Must stop when `signal` aborts. */
 export type Translate = (job: Job, signal: AbortSignal) => Promise<string>;
@@ -22,7 +25,7 @@ export type QueueOptions = {
 
 class Timeout extends Error {}
 
-/** Translates one utterance at a time, in order. */
+/** Translates one job (a version of a paragraph) at a time, in order. */
 export class TranslationQueue {
   readonly #translate: Translate;
   readonly #onOutcome: (o: Outcome) => void;
@@ -46,8 +49,14 @@ export class TranslationQueue {
     return this.#waiting.length;
   }
 
+  /**
+   * A waiting job of the same paragraph is replaced in its place, with no outcome: only its
+   * latest version is worth translating. The one running is not, and finishes first.
+   */
   push(job: Job): void {
-    this.#waiting.push(job);
+    const i = this.#waiting.findIndex((w) => w.key === job.key);
+    if (i === -1) this.#waiting.push(job);
+    else this.#waiting[i] = job;
     while (this.#waiting.length > this.#maxPending) {
       const skipped = this.#waiting.shift();
       if (skipped) this.#emit({ kind: 'skipped', job: skipped });

@@ -48,16 +48,44 @@ const pair = (text: string, translation: string): Pair => ({ text, translation, 
 describe('History', () => {
   it('keeps pairs in the order they were added', () => {
     const h = new History(768);
-    h.add(pair('はい', 'Yes.'));
-    h.add(pair('了解です', 'Got it.'));
+    h.add(pair('はい', 'Yes.'), 1);
+    h.add(pair('了解です', 'Got it.'), 2);
     expect(h.pairs.map((p) => p.text)).toEqual(['はい', '了解です']);
+  });
+
+  it('replaces the earlier version of a paragraph, and its cost', () => {
+    const h = new History(100);
+    h.add(pair('一二三四五六七八九十', 'abcd'), 1); // 27
+    h.add(pair('十九八七六五四三二一', 'abcd'), 2); // 27
+    h.add(pair('十九八七六五四三二一壱弐', 'abcdefgh'), 2); // 30
+    expect(h.pairs.map((p) => p.text)).toEqual(['一二三四五六七八九十', '十九八七六五四三二一壱弐']);
+    // 57 + 27 = 84 is within 100: nothing is dropped, which the earlier version's cost would do.
+    h.add(pair('壱弐参四五六七八九十', 'abcd'), 3);
+    expect(h.pairs).toHaveLength(3);
+  });
+
+  it('moves a paragraph to the end when it grows after a short reply', () => {
+    const h = new History(768);
+    h.add(pair('I finished the pr', '…'), 1);
+    h.add(pair('OK', 'OK'), 2);
+    h.add(pair('I finished the pr and then', '…'), 1);
+    expect(h.pairs.map((p) => p.text)).toEqual(['OK', 'I finished the pr and then']);
+  });
+
+  it('leaves out the paragraph being translated, and can remove it', () => {
+    const h = new History(768);
+    h.add(pair('はい', 'Yes.'), 1);
+    h.add(pair('来週の', 'Next week'), 2);
+    expect(h.pairsExcept(2).map((p) => p.text)).toEqual(['はい']);
+    h.remove(2);
+    expect(h.pairs.map((p) => p.text)).toEqual(['はい']);
   });
 
   it('drops pairs from the start down to half the budget once it is over', () => {
     // Each pair costs 10 (CJK) + 1 (4 Latin characters) + 16 = 27 tokens.
     const h = new History(100);
     const texts = ['一二三四五六七八九十', '十九八七六五四三二一', '壱弐参四五六七八九十', '甲乙丙丁戊己庚辛壬癸'];
-    for (const text of texts) h.add(pair(text, 'abcd'));
+    texts.forEach((text, i) => h.add(pair(text, 'abcd'), i));
     // 108 > 100: drop from the start while over 50, which leaves the last pair (27).
     expect(h.pairs.map((p) => p.text)).toEqual(['甲乙丙丁戊己庚辛壬癸']);
   });
@@ -65,27 +93,27 @@ describe('History', () => {
   it('does not drop anything while within the budget', () => {
     const h = new History(108);
     const texts = ['一二三四五六七八九十', '十九八七六五四三二一', '壱弐参四五六七八九十', '甲乙丙丁戊己庚辛壬癸'];
-    for (const text of texts) h.add(pair(text, 'abcd'));
+    texts.forEach((text, i) => h.add(pair(text, 'abcd'), i));
     expect(h.pairs).toHaveLength(4);
   });
 
   it('clears everything when a single pair is over the budget', () => {
     const h = new History(30);
-    h.add(pair('はい', 'Yes.'));
-    h.add(pair('一二三四五六七八九十一二三四五', 'abcd'));
+    h.add(pair('はい', 'Yes.'), 1);
+    h.add(pair('一二三四五六七八九十一二三四五', 'abcd'), 2);
     expect(h.pairs).toEqual([]);
   });
 
   it('ends up empty when the pair that goes over costs more than half the budget (as in tanakh)', () => {
     const h = new History(100);
-    h.add(pair('一二三四五六七八九十', 'abcd')); // 27
-    h.add(pair('一'.repeat(64), 'abcd')); // 81: 108 is over, and dropping down to 50 takes both
+    h.add(pair('一二三四五六七八九十', 'abcd'), 1); // 27
+    h.add(pair('一'.repeat(64), 'abcd'), 2); // 81: 108 is over, and dropping down to 50 takes both
     expect(h.pairs).toEqual([]);
   });
 
   it('can be cleared', () => {
     const h = new History(768);
-    h.add(pair('はい', 'Yes.'));
+    h.add(pair('はい', 'Yes.'), 1);
     h.clear();
     expect(h.pairs).toEqual([]);
   });
