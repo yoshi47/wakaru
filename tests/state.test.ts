@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CONTROLS, next, type Control, type State } from '../src/sidepanel/state';
+import { CONTROLS, isFirstRun, next, type Control, type State } from '../src/sidepanel/state';
 
 describe('next', () => {
   it.each<[State, Parameters<typeof next>[1], State]>([
@@ -70,5 +70,15 @@ describe('CONTROLS', () => {
         expect(CONTROLS[state].includes(control as Control), `${state} ${control}`).toBe(next(state, event!) !== null);
       }
     }
+  });
+});
+
+describe('isFirstRun', () => {
+  it('is true only in idle, with PLaMo, and without the model', () => {
+    expect(isFirstRun('idle', 'plamo', true)).toBe(true);
+    expect(isFirstRun('idle', 'plamo', false)).toBe(false);
+    expect(isFirstRun('idle', 'chrome', true)).toBe(false);
+    expect(isFirstRun('ready', 'plamo', true)).toBe(false);
+    expect(isFirstRun('error', 'plamo', true)).toBe(false);
   });
 });

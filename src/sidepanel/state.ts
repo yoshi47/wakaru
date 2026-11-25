@@ -1,13 +1,15 @@
 /**
- * The panel's states. There is no prepare button: the panel prepares by itself when nothing needs
- * downloading, and otherwise 開始 prepares first (its click is the user gesture that downloads
- * need). `starting` (capturing the tab and starting the recognizers) has 閉じる only, so that a
- * second click cannot capture the tab twice.
+ * The panel's states. There is no prepare button in the steady state: the panel prepares by
+ * itself when nothing needs downloading. When PLaMo's model is missing, the download stands in
+ * for 開始 (isFirstRun), so that 開始 does not start a 573MB download. 開始 still downloads the
+ * language packs and Chrome's translator (their APIs need the click). `starting` (capturing the
+ * tab and starting the recognizers) has 閉じる only, so that a second click cannot capture the
+ * tab twice.
  */
 export type State = 'idle' | 'preparing' | 'ready' | 'starting' | 'running' | 'stopping' | 'error';
 
 export type Event =
-  /** Preparing without a click: everything needed is already on this machine. */
+  /** Preparing: by itself when everything is here, or from the first-run download action. */
   | 'prepare'
   | 'prepared'
   /** Back to idle: 開始 tries again. */
@@ -53,3 +55,11 @@ export const CONTROLS: Record<State, readonly Control[]> = {
   stopping: ['close'],
   error: ['start', 'engine', 'clear', 'close'],
 };
+
+/**
+ * Whether the primary action is PLaMo's model download rather than 開始: idle, PLaMo selected,
+ * and the model not in OPFS. Also after an eviction, not just the first run.
+ */
+export function isFirstRun(state: State, engine: 'plamo' | 'chrome', modelMissing: boolean): boolean {
+  return state === 'idle' && engine === 'plamo' && modelMissing;
+}

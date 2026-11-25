@@ -7,8 +7,9 @@ import { loadSettings, saveSettings, type Settings } from '../settings';
 import { loadTarget, onTargetChange, type Target } from '../shared/target';
 import { modelFile } from '../mt/plamo/modelStore';
 import { languageDetectorApi, speechRecognition, translatorApi } from '../types/web-ai';
+import { FIRST_MESSAGE, MODEL_MB, MODEL_MISSING_MESSAGE } from './messages';
 import { Session } from './session';
-import { CONTROLS, next, type Control, type Event, type State } from './state';
+import { CONTROLS, isFirstRun, next, type Control, type Event, type State } from './state';
 import { byId, LogView, SubtitleView, type Check } from './ui';
 
 const LOCALES = ['ja-JP', 'en-US'];
@@ -46,7 +47,6 @@ const buttons: Record<Exclude<Control, 'engine'>, HTMLButtonElement> = {
 /** Shown (and only enabled) in their state; the others are icon buttons, disabled instead. */
 const ACTIONS = new Set<Control>(['start', 'stop']);
 const READY_MESSAGE = '「開始」を押すと、対象タブの音声を聞き取ります';
-const FIRST_MESSAGE = '「開始」を押すと、必要な言語パックや翻訳モデルをダウンロードしてから聞き取ります';
 const demo = new URLSearchParams(location.search).has('demo');
 const busyButton = byId<HTMLButtonElement>('busy');
 const actionsEl = document.querySelector<HTMLElement>('.actions')!;
@@ -79,6 +79,8 @@ const log = logView.log;
 let settings: Settings = await loadSettings();
 let state: State = 'idle';
 let message = '';
+/** PLaMo's model is not in OPFS: the download stands in for 開始 (see isFirstRun). */
+let modelMissing = false;
 /** Each preparation step: the engine's shows in the banner and under the engine choice. */
 const readiness: Record<'langs' | 'detector' | 'engine', Check> = {
   langs: { status: 'pending', detail: '' },
@@ -101,7 +103,7 @@ const makeBackend = (engine: Settings['engine']): TranslatorBackend => {
 let backend = makeBackend(settings.engine);
 /** The previous engine's dispose(): PLaMo waits for it, so that two models are never loaded. */
 let disposing: Promise<void> = Promise.resolve();
-/** Advanced by 開始 and engine switches: an availability check they overtook does nothing. */
+/** Advanced by the primary action and engine switches: an availability check they overtook does nothing. */
 let autoToken = 0;
 let detector: LangDetector | null = null;
 let session: Session | null = null;
@@ -130,11 +132,16 @@ function render(): void {
   const focusInEngine = engineField.contains(active);
   document.body.dataset.state = state;
   const enabled = CONTROLS[state];
+  // 開始 gives way to the model download when PLaMo's model is missing: the download is its own
+  // step, so that pressing 開始 does not start a 573MB download.
+  const first = isFirstRun(state, backend.id, modelMissing);
   for (const [control, button] of Object.entries(buttons)) {
     const on = enabled.includes(control as Control);
     button.disabled = !on;
     if (ACTIONS.has(control as Control)) button.hidden = !on;
   }
+  buttons.start.textContent = first ? '準備' : '開始';
+  heroStart.textContent = first ? 'モデルをダウンロード' : '開始';
   heroStart.hidden = !enabled.includes('start');
   heroStart.disabled = heroStart.hidden;
   busyButton.hidden = !BUSY.has(state);
@@ -184,7 +191,11 @@ function engineStatusText(): string {
   // The detail, not a fixed line: the open sheet covers the banner that shows it too.
   if (status === 'working') return detail || '準備しています';
   if (status === 'error') return `準備できませんでした: ${detail}`;
-  if (status === 'pending') return '「開始」を押すと準備します';
+  if (status === 'pending') {
+    return backend instanceof PlamoBackend && modelMissing
+      ? `モデル（${MODEL_MB}MB）のダウンロードが必要です`
+      : '「開始」を押すと準備します';
+  }
   return detail;
 }
 
@@ -228,6 +239,9 @@ function prepareAll(opts: { packsAvailable?: boolean } = {}): Promise<boolean> {
   const preparing = backend;
   const start = performance.now();
   const onProgress = (p: PrepareProgress) => {
+    // The file is in OPFS once the load starts: the download gives way to 開始 even if the load
+    // fails (開始 then loads it again from OPFS).
+    if (p.phase === 'load' && preparing instanceof PlamoBackend) modelMissing = false;
     readiness.engine = engineReadiness(preparing, p);
     render();
   };
@@ -254,7 +268,10 @@ function prepareAll(opts: { packsAvailable?: boolean } = {}): Promise<boolean> {
     const failed = results.flatMap((r) => (r.status === 'rejected' ? [err(r.reason)] : []));
     if (failed.length) {
       for (const f of failed) log(`prepare failed: ${f}`);
-      dispatch('prepareFailed', `準備できませんでした（${failed.join(' / ')}）。「開始」でもう一度試します`);
+      const retry = modelMissing
+        ? 'もう一度押すと、ダウンロードは続きから再開します'
+        : '「開始」でもう一度試します';
+      dispatch('prepareFailed', `準備できませんでした（${failed.join(' / ')}）。${retry}`);
       return false;
     }
     log(`prepared ${preparing.id} in ${Math.round(performance.now() - start)}ms`);
@@ -282,6 +299,19 @@ async function preparableWithoutClick(b: TranslatorBackend): Promise<boolean> {
 async function autoPrepare(): Promise<void> {
   const token = ++autoToken;
   const b = backend;
+  if (b instanceof PlamoBackend) {
+    const file = await modelFile();
+    if (token !== autoToken || b !== backend) return;
+    modelMissing = !file;
+  } else {
+    modelMissing = false;
+  }
+  if (token !== autoToken || b !== backend || state !== 'idle') return;
+  // The label and the engine note follow the model check, before the slower availability calls:
+  // after an engine switch, a missing model should not keep showing 開始 for that long.
+  if (modelMissing) message = MODEL_MISSING_MESSAGE;
+  else if (message === MODEL_MISSING_MESSAGE) message = '';
+  render();
   const ok = await preparableWithoutClick(b).catch((e: unknown) => {
     log(`availability check failed: ${err(e)}`);
     return false;
@@ -289,16 +319,22 @@ async function autoPrepare(): Promise<void> {
   // The engine may have been switched, or 開始 pressed, while checking.
   if (token !== autoToken || b !== backend || state !== 'idle') return;
   if (!ok) {
-    message = FIRST_MESSAGE;
+    message = modelMissing ? MODEL_MISSING_MESSAGE : FIRST_MESSAGE;
     render();
     return;
   }
   if (dispatch('prepare', '準備しています')) await prepareAll({ packsAvailable: true });
 }
 
-function onStartClick(): void {
+function onPrimaryClick(): void {
   if (demo) return;
   autoToken++;
+  if (isFirstRun(state, backend.id, modelMissing)) {
+    // The model is not here yet. This click is the gesture that also lets the language packs
+    // install; 開始 comes after, so that pressing it does not download the 573MB model.
+    if (dispatch('prepare', '準備しています')) void prepareAll();
+    return;
+  }
   if (state === 'ready') {
     if (backend instanceof PlamoBackend && backend.reloading) {
       message = 'PLaMo を読み込み直しています。少し待ってから「開始」を押してください';
@@ -320,8 +356,8 @@ function onStartClick(): void {
   });
 }
 
-buttons.start.addEventListener('click', onStartClick);
-heroStart.addEventListener('click', onStartClick);
+buttons.start.addEventListener('click', onPrimaryClick);
+heroStart.addEventListener('click', onPrimaryClick);
 
 async function startSession(): Promise<void> {
   // Before any await: a second click would try to capture the tab twice.
@@ -399,9 +435,14 @@ engineField.addEventListener('change', () => {
   if (!engine) return;
   if (engine === backend.id) return;
   const previous = backend;
+  const previousMissing = modelMissing;
   backend = makeBackend(engine);
+  // Chrome needs no PLaMo model. Switching to PLaMo re-checks it in autoPrepare below; the sheet
+  // covers the panel until it closes, so the first render of the new engine cannot be clicked.
+  if (!(backend instanceof PlamoBackend)) modelMissing = false;
   if (!dispatch('engineChanged', '')) {
     backend = previous;
+    modelMissing = previousMissing;
     render();
     return;
   }
@@ -446,6 +487,12 @@ function acceptTarget(t: Target | null): void {
   render();
 }
 
+// Before the first render: acceptTarget() renders, and the primary action should be the download
+// from the start when PLaMo's model is missing.
+if (backend instanceof PlamoBackend) {
+  modelMissing = !(await modelFile());
+  if (modelMissing) message = MODEL_MISSING_MESSAGE;
+}
 // Listen before reading, so that a change made while reading is not missed.
 onTargetChange(acceptTarget);
 acceptTarget(await loadTarget());
@@ -457,9 +504,10 @@ if (demo) {
   target ??= { tabId: 0, title: 'Weekly sync – Google Meet', windowId: windowId ?? 0 };
   mountDemo({
     subtitles,
-    set: (s, text, r) => {
+    set: (s, text, r, missing) => {
       state = s;
       message = text;
+      modelMissing = missing;
       Object.assign(readiness, r);
       render();
     },
