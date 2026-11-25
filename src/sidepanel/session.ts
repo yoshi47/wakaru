@@ -72,7 +72,7 @@ export class Session {
     });
     this.#stall = new StallFinalizer({
       stallMs: settings.stallMs,
-      onDiscard: (lang, text) => events.onLog(`${lang} STALL discarded (stuck start): "${text}"`),
+      onDiscard: (lang, text, why) => events.onLog(`${lang} discarded (${why}): "${text}"`),
     });
     this.#merge = opts.backend.fast;
     this.#paragrapher = new Paragrapher({
@@ -157,11 +157,13 @@ export class Session {
   #onFinal(lang: Lang, generation: number, text: string): void {
     // A result closed: the same words again (「はい」 after silence) are new speech.
     this.#heard.delete(lang);
-    if (!this.#stall.onRealFinal(lang, generation, text, performance.now())) {
-      this.#events.onLog(`${lang} FINAL dropped (repeats a stalled interim, or empty): "${text}"`);
+    const passed = this.#stall.onRealFinal(lang, generation, text, performance.now());
+    if (passed === null) {
+      this.#events.onLog(`${lang} FINAL dropped (empty, a repeat of a stalled interim, or its rest discarded): "${text}"`);
       return;
     }
-    this.#push({ lang, text, at: performance.now(), synthetic: false });
+    if (passed !== text) this.#events.onLog(`${lang} FINAL cut to what follows a stalled interim: "${text}"`);
+    this.#push({ lang, text: passed, at: performance.now(), synthetic: false });
   }
 
   #onEnd(lang: Lang, generation: number): void {

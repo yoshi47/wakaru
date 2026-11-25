@@ -30,9 +30,12 @@ async function run(events: Event[], until: number): Promise<Decision[]> {
       const e = queue.shift()!;
       if (e.kind === 'interim') {
         stall.update(e.lang, 1, e.text, e.at);
-      } else if (stall.onRealFinal(e.lang, 1, e.text, e.at)) {
-        arbiter.push({ lang: e.lang, text: e.text, at: e.at, synthetic: false });
+        continue;
       }
+      const passed = stall.onRealFinal(e.lang, 1, e.text, e.at);
+      if (passed !== null) arbiter.push({ lang: e.lang, text: passed, at: e.at, synthetic: false });
+      // As DualRecognizer does: the interim after a final, '' when the event had only the final.
+      stall.update(e.lang, 1, '', e.at);
     }
     for (const final of stall.tick(time)) arbiter.push(final);
     decisions.push(...(await arbiter.flushDue()));
@@ -94,6 +97,24 @@ describe('StallFinalizer with Arbiter (Task 3 timelines)', () => {
       8000,
     );
     expect(adopted(decisions)).toEqual(['en No worries I said the API rate limit']);
+  });
+
+  // dev/overlap.json's monologue-ja: a pause stalled the start, and its final brought the rest.
+  it('keeps what a final adds to a stalled start, in the order spoken', async () => {
+    const decisions = await run(
+      [
+        { at: 0, kind: 'interim', lang: 'ja', text: '発注者取り消し機能なんですけど' },
+        { at: 2500, kind: 'final', lang: 'ja', text: '発注 者 取り消し 機能 なん です けど クライアント 側 の UI と' },
+        { at: 3000, kind: 'interim', lang: 'ja', text: 'あと' },
+        { at: 3600, kind: 'final', lang: 'ja', text: 'あと API の 実装 を 進めて います' },
+      ],
+      8000,
+    );
+    expect(adopted(decisions)).toEqual([
+      'ja 発注者取り消し機能なんですけど',
+      'ja クライアント 側 の UI と',
+      'ja あと API の 実装 を 進めて います',
+    ]);
   });
 
   it('still finalizes an interim that never gets a final when both sides are silent', async () => {

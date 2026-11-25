@@ -139,9 +139,9 @@ en FINAL "Just for the anything that's a price or a total amount so I'm finishin
 
 測った無音は、本当の無音とほぼ同じか、最大 0.56 秒長く出る。3 秒の話者交代は 3499〜3559ms と測られ、`paragraphMaxGapMs`（3000）で分かれる。2.5 秒を超える言いよどみと、間が 2.5 秒前後の話者交代の扱いは、会議のログで確かめる。
 
-### 既知の不具合（段落とは別、未対応）
+### 見つけた不具合（段落とは別、#12 で修正）
 
-STALL の後に来た本物の FINAL が、確定済みの頭の後に続きを持つと、その続きが消える。StallFinalizer は続きを途中経過として持つ（`onRealFinal`）が、Chrome が FINAL の直後に送る空の途中経過で上書きされる。`monologue-ja` の「クライアント側のUIと」と、会議のログの `I priority QH gets` がこれで消えた。既存のテストは空の途中経過を再現していない。
+STALL の後に来た本物の FINAL が、確定済みの頭の後に続きを持つと、その続きが消えていた。StallFinalizer は続きを途中経過として持っていたが、Chrome が FINAL の直後に送る空の途中経過で上書きされていた。`monologue-ja` の「クライアント側のUIと」と、会議のログの `I priority QH gets` がこれで消えた。続きを確定としてすぐ渡す形に直した（`docs/plans/2026-11-20-mvp.md` の StallFinalizer の節）。
 
 ---
 
