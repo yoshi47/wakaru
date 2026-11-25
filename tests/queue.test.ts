@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TranslationQueue, type Job, type Outcome } from '../src/mt/queue';
 
-const job = (id: number): Job => ({ id, text: `text ${id}`, from: 'ja', to: 'en', firstAt: id * 100 });
+/** A job of a paragraph of its own, unless `key` says which. */
+const job = (id: number, key = id): Job => ({ id, key, text: `text ${id}`, from: 'ja', to: 'en', firstAt: id * 100 });
 
 /** A translate function whose calls finish when the test says so. */
 function controlled() {
@@ -127,6 +128,50 @@ describe('TranslationQueue', () => {
       await settle();
     }
     expect(calls.map((c) => c.job.id)).toEqual([1, 4, 5, 6, 7, 8]);
+  });
+
+  it('replaces a waiting job of the same paragraph in its place, with no outcome for it', async () => {
+    const { calls, translate } = controlled();
+    const { queue, outcomes } = setup(translate);
+    queue.push(job(1));
+    queue.push(job(2, 7));
+    queue.push(job(3));
+    queue.push(job(4, 7));
+    expect(queue.pending).toBe(2);
+    for (let i = 0; i < 3; i++) {
+      await settle();
+      calls[i]!.resolve(`t${i}`);
+    }
+    await settle();
+    expect(calls.map((c) => c.job.id)).toEqual([1, 4, 3]);
+    expect(outcomes.map((o) => o.job.id)).toEqual([1, 4, 3]);
+  });
+
+  it('skips nothing when a newer version replaces a waiting one at the limit', async () => {
+    const { translate } = controlled();
+    const { queue, outcomes } = setup(translate);
+    for (let id = 1; id <= 6; id++) queue.push(job(id));
+    await settle();
+    expect(queue.pending).toBe(5);
+    queue.push(job(7, 6));
+    expect(queue.pending).toBe(5);
+    expect(outcomes).toEqual([]);
+  });
+
+  it('translates the newer version of a paragraph after the one running, which is not replaced', async () => {
+    const { calls, translate } = controlled();
+    const { queue, outcomes } = setup(translate);
+    queue.push(job(1, 7));
+    await settle();
+    queue.push(job(2, 7));
+    calls[0]!.resolve('old');
+    await settle();
+    calls[1]!.resolve('new');
+    await settle();
+    expect(outcomes.map((o) => (o.kind === 'done' ? [o.job.id, o.translation] : o.kind))).toEqual([
+      [1, 'old'],
+      [2, 'new'],
+    ]);
   });
 
   it('drain() resolves once everything has been translated', async () => {

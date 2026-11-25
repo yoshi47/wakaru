@@ -1,7 +1,8 @@
-import type { Decision } from '../asr/arbiter';
+import type { ParagraphUpdate } from '../asr/paragrapher';
 import type { Outcome } from '../mt/queue';
 import type { Lang } from '../shared/lang';
 
+/** Subtitles (paragraphs) kept on screen. */
 const MAX_UTTERANCES = 500;
 const MAX_LOG_LINES = 3000;
 /** Within this of the bottom counts as at the bottom: the list keeps following new lines. */
@@ -25,16 +26,37 @@ function el<K extends keyof HTMLElementTagNameMap>(
 /** One preparation step: its state, and what to show while it runs or after it failed. */
 export type Check = { status: 'pending' | 'working' | 'ok' | 'error'; detail: string; ratio?: number };
 
-/** The subtitles: one block per utterance (source with its language, then the translation). */
+/**
+ * One subtitle on screen. `latest` is the job translating its latest version, and `settled`
+ * whether its outcome came: an earlier version's translation may come after it (the latest was
+ * skipped while the earlier one ran).
+ */
+type Shown = { source: HTMLElement; translation: HTMLElement; latest: number; translated: boolean; settled: boolean };
+
+const failure = (o: Exclude<Outcome, { kind: 'done' }>) =>
+  o.kind === 'skipped' ? '翻訳待ちが多いため省略' : `翻訳できませんでした（${o.reason === 'timeout' ? '時間切れ' : o.message}）`;
+
+/** The translation shown is of an earlier version, and will stay so: says the rest is missing. */
+function behind(t: HTMLElement, why: string): void {
+  t.classList.remove('stale');
+  t.querySelector('.note')?.remove();
+  t.append(el('span', { className: 'note', textContent: '続きは訳せませんでした', title: why }));
+}
+
+/**
+ * The subtitles: one block per paragraph (source with its language, then the translation). A
+ * paragraph that grows is translated again: meanwhile its earlier translation stays, dimmed
+ * (`stale`), rather than flashing back to 翻訳中 with each piece.
+ */
 export class SubtitleView {
   readonly #scroller: HTMLElement;
   readonly #list: HTMLOListElement;
   readonly #interim: HTMLElement;
   /**
-   * By `${run}:${job id}`: a session numbers its jobs from 1, so the ids of the runs before it are
-   * seen again.
+   * By `${run}:${paragraph key}`: a session numbers its paragraphs from 1, so the keys of the
+   * runs before it are seen again.
    */
-  readonly #translations = new Map<string, HTMLElement>();
+  readonly #shown = new Map<string, Shown>();
 
   constructor(scroller: HTMLElement, list: HTMLOListElement, interim: HTMLElement) {
     this.#scroller = scroller;
@@ -42,39 +64,49 @@ export class SubtitleView {
     this.#interim = interim;
   }
 
-  add(run: number, id: number, d: Decision & { lang: Lang }): void {
+  /** A paragraph started or grew. One that クリア removed shows again, with this version. */
+  show(run: number, jobId: number, u: ParagraphUpdate): void {
+    const key = `${run}:${u.paragraph.key}`;
     this.#follow(() => {
-      const li = el('li', { className: 'utterance' });
-      const key = `${run}:${id}`;
-      li.dataset.key = key;
-      li.dataset.lang = d.lang;
-      const source = el('div', { className: 'source' });
-      source.append(el('span', { className: 'lang', textContent: d.lang.toUpperCase() }), el('span', { textContent: d.text }));
-      const translation = el('p', { className: 'translation pending', textContent: '翻訳中' });
-      li.append(source, translation);
-      this.#list.append(li);
-      this.#translations.set(key, translation);
-      while (this.#list.children.length > MAX_UTTERANCES) {
-        const first = this.#list.firstElementChild as HTMLElement;
-        this.#translations.delete(first.dataset.key ?? '');
-        first.remove();
+      const shown = this.#shown.get(key) ?? this.#create(key, u.paragraph.lang);
+      shown.source.textContent = u.paragraph.text;
+      shown.latest = jobId;
+      shown.settled = false;
+      const t = shown.translation;
+      if (shown.translated) {
+        t.classList.add('stale');
+        t.querySelector('.note')?.remove();
+      } else if (t.classList.contains('error')) {
+        // The earlier version failed: this one is under way.
+        t.classList.replace('error', 'pending');
+        t.textContent = '翻訳中';
       }
     });
   }
 
   setOutcome(run: number, o: Outcome): void {
-    const target = this.#translations.get(`${run}:${o.job.id}`);
-    if (!target) return;
+    const shown = this.#shown.get(`${run}:${o.job.key}`);
+    if (!shown) return;
+    const latest = o.job.id === shown.latest;
+    const t = shown.translation;
+    if (o.kind !== 'done' && !latest) return;
+    if (latest) shown.settled = true;
     this.#follow(() => {
-      target.classList.remove('pending');
+      t.classList.remove('pending');
       if (o.kind === 'done') {
-        target.textContent = o.translation;
+        t.classList.remove('error');
+        t.textContent = o.translation;
+        shown.translated = true;
+        if (latest) t.classList.remove('stale');
+        // An earlier version, after the latest failed: nothing newer will come.
+        else if (shown.settled) behind(t, '最新の版は訳せませんでした');
+        else t.classList.add('stale');
+      } else if (!shown.translated) {
+        t.classList.add('error');
+        t.textContent = failure(o);
       } else {
-        target.classList.add('error');
-        target.textContent =
-          o.kind === 'skipped'
-            ? '翻訳待ちが多いため省略'
-            : `翻訳できませんでした（${o.reason === 'timeout' ? '時間切れ' : o.message}）`;
+        // The translation of an earlier version stays, rather than an error in its place.
+        behind(t, failure(o));
       }
     });
   }
@@ -88,10 +120,16 @@ export class SubtitleView {
     });
   }
 
-  /** At the end of a run: the hero may come back if nothing became a subtitle. */
+  /**
+   * At the end of a run: the hero may come back if nothing became a subtitle. A translation still
+   * dimmed is of an earlier version, and stays so: stop gives up waiting after a while.
+   */
   endRun(): void {
     this.setInterim(null);
     delete this.#scroller.dataset.heard;
+    for (const { translation } of this.#shown.values()) {
+      if (translation.classList.contains('stale')) behind(translation, '停止したため');
+    }
   }
 
   scrollToLatest(): void {
@@ -100,9 +138,29 @@ export class SubtitleView {
 
   clear(): void {
     this.#list.replaceChildren();
-    this.#translations.clear();
+    this.#shown.clear();
     this.#interim.textContent = '';
     // data-heard stays while a run goes on (only endRun() drops it): the hero would flash back.
+  }
+
+  #create(key: string, lang: Lang): Shown {
+    const li = el('li', { className: 'utterance' });
+    li.dataset.key = key;
+    li.dataset.lang = lang;
+    const source = el('span');
+    const head = el('div', { className: 'source' });
+    head.append(el('span', { className: 'lang', textContent: lang.toUpperCase() }), source);
+    const translation = el('p', { className: 'translation pending', textContent: '翻訳中' });
+    li.append(head, translation);
+    this.#list.append(li);
+    const shown: Shown = { source, translation, latest: 0, translated: false, settled: false };
+    this.#shown.set(key, shown);
+    while (this.#list.children.length > MAX_UTTERANCES) {
+      const first = this.#list.firstElementChild as HTMLElement;
+      this.#shown.delete(first.dataset.key ?? '');
+      first.remove();
+    }
+    return shown;
   }
 
   /** Runs `change`, then keeps the list at the bottom if it was there: not while the user reads above. */

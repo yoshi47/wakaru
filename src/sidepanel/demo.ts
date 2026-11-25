@@ -2,7 +2,7 @@
 // capturing a tab. Nothing here runs otherwise. The scenes set the state directly while the real
 // handlers stay live: pressing the buttons here really prepares, and 停止 has no session to stop.
 
-import type { Decision } from '../asr/arbiter';
+import type { Piece } from '../asr/paragrapher';
 import type { Outcome } from '../mt/queue';
 import type { Lang } from '../shared/lang';
 import type { State } from './state';
@@ -26,6 +26,14 @@ const SAMPLES: [Lang, string, string | null][] = [
   ['en', 'Exactly can you take the action item for that', null],
 ];
 
+// One speaker in pieces, as in a meeting: the paragraph has grown since its first translation,
+// which shows dimmed while the whole is translated again.
+const GROWING: { lang: Lang; pieces: string[]; translation: string } = {
+  lang: 'en',
+  pieces: ['All right I finished the PR and then', 'I realized that it was not the only issue'],
+  translation: 'よし、PR は終わりました。それから',
+};
+
 const ok = (detail = ''): Check => ({ status: 'ok', detail });
 const READY: Readiness = { langs: ok('日本語 · 英語'), detector: ok(), engine: ok('GPU で動いています') };
 
@@ -39,21 +47,33 @@ const SCENES: Record<State, [string, Readiness]> = {
   error: ['音声認識（ja）が止まりました: audio-capture。「開始」でやり直します', READY],
 };
 
-const decision = (lang: Lang, text: string): Decision & { lang: Lang } => ({ lang, text, firstAt: 0, decidedAt: 0, rejected: [] });
+const other = (lang: Lang): Lang => (lang === 'ja' ? 'en' : 'ja');
 
 export function mountDemo(hooks: DemoHooks): void {
   const { subtitles } = hooks;
+  let jobId = 0;
+  /** Shows the paragraph `key` made of `pieces`, as its next version. */
+  const show = (key: number, lang: Lang, pieces: string[]) => {
+    const list: Piece[] = pieces.map((text) => ({ lang, text, firstAt: 0 }));
+    const text = pieces.join(lang === 'ja' ? '' : ' ');
+    const id = ++jobId;
+    subtitles.show(0, id, { kind: pieces.length > 1 ? 'append' : 'new', paragraph: { key, lang, text, pieces: list }, closed: null });
+    return { id, key, text, from: lang, to: other(lang), firstAt: 0 };
+  };
   SAMPLES.forEach(([lang, text, translation], i) => {
-    subtitles.add(0, i, decision(lang, text));
+    const job = show(i + 1, lang, [text]);
     if (translation === null) return;
-    const job = { id: i, text, from: lang, to: (lang === 'ja' ? 'en' : 'ja') as Lang, firstAt: 0 };
     const outcome: Outcome =
       i === 4
         ? { kind: 'failed', job, reason: 'timeout', message: '', startedAt: 0, finishedAt: 0 }
         : { kind: 'done', job, translation, startedAt: 0, finishedAt: 0 };
     subtitles.setOutcome(0, outcome);
   });
-  subtitles.setInterim({ lang: 'ja', text: '承知しました今週中に' });
+  const key = SAMPLES.length + 1;
+  const first = show(key, GROWING.lang, GROWING.pieces.slice(0, 1));
+  subtitles.setOutcome(0, { kind: 'done', job: first, translation: GROWING.translation, startedAt: 0, finishedAt: 0 });
+  show(key, GROWING.lang, GROWING.pieces);
+  subtitles.setInterim({ lang: 'en', text: 'Like the document layouts' });
 
   const bar = document.createElement('div');
   bar.style.cssText =
@@ -61,13 +81,13 @@ export function mountDemo(hooks: DemoHooks): void {
   const select = document.createElement('select');
   for (const state of Object.keys(SCENES)) select.append(new Option(state, state));
   select.value = 'running';
-  const show = () => {
+  const showScene = () => {
     const state = select.value as State;
     const [message, readiness] = SCENES[state];
     hooks.set(state, message, readiness);
   };
-  select.addEventListener('change', show);
+  select.addEventListener('change', showScene);
   bar.append(select);
   document.body.append(bar);
-  show();
+  showScene();
 }
