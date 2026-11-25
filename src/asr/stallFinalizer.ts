@@ -5,11 +5,19 @@ type State = {
   generation: number;
   text: string;
   changedAt: number;
-  /** The interim finalized here, until the recognizer moves on from it. */
-  stalled: string | null;
+  /**
+   * The interim finalized here, or discarded as the other language's stuck start, until the
+   * recognizer moves on from it.
+   */
+  stalled: { text: string; discarded: boolean } | null;
 };
 
+export type DiscardReason = 'stuck start' | 'rest of a stuck start' | 'Latin letters after a stalled start';
+
 const other = (lang: Lang): Lang => (lang === 'ja' ? 'en' : 'ja');
+// Katakana counts, unlike in the Arbiter's substantialJa: a Japanese word may follow a pause in
+// it ("テスト"). The ja recognizer's katakana spelling of English passes too, as in any final.
+const JAPANESE = /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u;
 
 /**
  * What is left of `text` after `prefix`, or null when `text` does not start with it. ja compares
@@ -37,8 +45,8 @@ function after(lang: Lang, prefix: string, text: string): string | null {
 
 export type StallFinalizerOptions = {
   stallMs: number;
-  /** A stalled interim that was dropped as the stuck start of the other language's speech. */
-  onDiscard?: (lang: Lang, text: string) => void;
+  /** Text dropped as (part of) the other language's speech, and why. */
+  onDiscard?: (lang: Lang, text: string, why: DiscardReason) => void;
 };
 
 /**
@@ -56,14 +64,17 @@ export type StallFinalizerOptions = {
  * Why the recognizer is not restarted after a stall: the restart lands in the pause between
  * utterances, and the new recognizer missed the start of the next one (Task 3: "Sure" and "Most"
  * were lost). Left running, it moves on by itself: the next speech replaces a stuck interim, or
- * a late result repeats the finalized text at its start. That start is cut off, and the rest is
- * handled as a new interim.
+ * a late result repeats the finalized text at its start. That start is cut off: the rest of an
+ * interim is handled as the interim, and the rest of a final as the final (see onRealFinal).
  */
 export class StallFinalizer {
   readonly #stallMs: number;
-  readonly #onDiscard: (lang: Lang, text: string) => void;
+  readonly #onDiscard: (lang: Lang, text: string, why: DiscardReason) => void;
   readonly #states = new Map<Lang, State>();
-  /** Per language, when it last showed speech (a non-empty interim, or a final). Survives generations. */
+  /**
+   * Per language, when it last showed speech: a non-empty interim, or a final that brought words
+   * passed on. Survives generations.
+   */
   readonly #heardAt = new Map<Lang, number>();
 
   constructor(opts: StallFinalizerOptions) {
@@ -78,23 +89,40 @@ export class StallFinalizer {
   }
 
   /**
-   * A real final came. Returns false when it repeats the interim already finalized here: its
-   * start is cut off and the rest, if any, becomes the interim; the caller drops the final.
-   * Otherwise clears the interim so that it is not finalized again.
+   * A real final came. Returns what the caller passes on as the final: the final, or, when it
+   * repeats the start stalled here, what follows that start. null drops it: empty, a mere repeat,
+   * the rest of a start discarded as the other language's, or Latin letters following on the ja
+   * side. Clears the interim either way, so that it is not finalized again.
+   *
+   * What follows goes on at once, not as an interim: the interim that DualRecognizer sends right
+   * after a final is '' and would wipe it out, and kept to be finalized later, it would come after
+   * the finals that follow it. Latin letters on the ja side are the stuck start of English speech
+   * (Task 1: "WEB 版 の 方 です the" while "That makes sense" began). The cost is a Japanese
+   * continuation of Latin letters or digits alone ("次は API"): an English word is usually also
+   * heard by the en side.
    */
-  onRealFinal(lang: Lang, generation: number, text: string, now: number): boolean {
+  onRealFinal(lang: Lang, generation: number, text: string, now: number): string | null {
     const s = this.#current(lang, generation);
-    if (!s || !text.trim()) return false;
-    const rest = s.stalled === null ? null : after(lang, s.stalled, text);
+    if (!s || !text.trim()) return null;
+    const stalled = s.stalled;
+    const rest = stalled === null ? null : after(lang, stalled.text, text);
     // The recognizer has closed this result: what follows is a new one.
     s.stalled = null;
-    if (rest !== null) {
-      this.#setInterim(lang, s, rest, now);
-      return false;
-    }
     s.text = '';
+    // Neither a mere repeat nor what is dropped here is new speech of this language: counted as
+    // heard, it would hold up the other language's reply, and then drop it as a stuck start.
+    if (rest === '') return null;
+    if (rest !== null && stalled?.discarded) {
+      // The other language's speech, as its start was: "No ウォーリーズ" after a stuck "No".
+      this.#onDiscard(lang, rest, 'rest of a stuck start');
+      return null;
+    }
+    if (rest !== null && lang === 'ja' && !JAPANESE.test(rest)) {
+      this.#onDiscard(lang, rest, 'Latin letters after a stalled start');
+      return null;
+    }
     this.#heardAt.set(lang, now);
-    return true;
+    return rest ?? text;
   }
 
   /**
@@ -130,7 +158,7 @@ export class StallFinalizer {
   /** `text` without the finalized start it repeats; a different start means the recognizer moved on. */
   #rest(lang: Lang, s: State, text: string): string {
     if (s.stalled === null || !text.trim()) return text;
-    const rest = after(lang, s.stalled, text);
+    const rest = after(lang, s.stalled.text, text);
     if (rest !== null) return rest;
     s.stalled = null;
     return text;
@@ -152,8 +180,8 @@ export class StallFinalizer {
   }
 
   #discard(lang: Lang, s: State): void {
-    this.#onDiscard(lang, s.text);
-    s.stalled = s.text;
+    this.#onDiscard(lang, s.text, 'stuck start');
+    s.stalled = { text: s.text, discarded: true };
     s.text = '';
   }
 
@@ -166,7 +194,7 @@ export class StallFinalizer {
       at: s.changedAt,
       synthetic: true,
     };
-    s.stalled = s.text;
+    s.stalled = { text: s.text, discarded: false };
     s.text = '';
     return final;
   }
