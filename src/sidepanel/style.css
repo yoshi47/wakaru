@@ -344,7 +344,7 @@ button:disabled {
   gap: var(--space-4);
   /* A little above the geometric centre: the block reads better there (optical centre). */
   margin: auto var(--space-3);
-  padding-block: var(--space-5) calc(var(--space-5) + 48px);
+  padding-block: var(--space-5) calc(var(--space-5) + 96px);
   text-align: center;
 }
 
