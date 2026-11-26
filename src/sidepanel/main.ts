@@ -206,7 +206,7 @@ function engineReadiness(b: TranslatorBackend, p?: PrepareProgress): Check {
   const label = ENGINE_LABEL[b.id];
   if (p?.phase === 'download') {
     const ratio = p.ratio ?? 0;
-    return { status: 'working', detail: `${label} をダウンロード中（パネルを閉じると中断）`, ratio };
+    return { status: 'working', detail: `${label} をダウンロード中`, ratio };
   }
   if (p?.phase === 'load') return { status: 'working', detail: `${label} を読み込み中` };
   if (b instanceof PlamoBackend && b.reloading) return { status: 'working', detail: 'PLaMo を読み込み直しています' };

@@ -40,7 +40,7 @@ const READY: Readiness = { langs: ok('日本語 · 英語'), detector: ok(), eng
 
 const SCENES: Record<State, [string, Readiness, boolean?, boolean?]> = {
   idle: [FIRST_RUN_LABEL, { langs: { status: 'pending', detail: '' }, detector: { status: 'pending', detail: '' }, engine: { status: 'pending', detail: 'PLaMo' } }, true, true],
-  preparing: ['準備しています', { langs: ok('日本語 · 英語'), detector: ok(), engine: { status: 'working', detail: 'PLaMo をダウンロード中（パネルを閉じると中断）', ratio: 0.45 } }],
+  preparing: ['準備しています', { langs: ok('日本語 · 英語'), detector: ok(), engine: { status: 'working', detail: 'PLaMo をダウンロード中', ratio: 0.45 } }],
   ready: ['「開始」を押すと、対象タブの音声を聞き取ります', READY],
   starting: ['開始しています', READY],
   running: ['「Weekly sync – Google Meet」の音声を聞き取っています', READY],
