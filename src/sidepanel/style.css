@@ -237,7 +237,8 @@ button:disabled {
 .target {
   flex: 1;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 6px;
   min-inline-size: 0;
   line-height: var(--leading-tight);
 }
@@ -246,6 +247,7 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-inline-size: 0;
   font-weight: 600;
 }
 
@@ -340,8 +342,9 @@ button:disabled {
   display: grid;
   justify-items: center;
   gap: var(--space-4);
+  /* A little above the geometric centre: the block reads better there (optical centre). */
   margin: auto var(--space-3);
-  padding-block: var(--space-5);
+  padding-block: var(--space-5) calc(var(--space-5) + 96px);
   text-align: center;
 }
 
@@ -354,15 +357,33 @@ button:disabled {
 }
 
 .hero .primary {
-  min-inline-size: 160px;
-  min-block-size: 44px;
+  min-inline-size: 220px;
+  min-block-size: 48px;
   font-size: var(--text-lg);
+}
+
+/* The first-run choice: PLaMo's download large, Chrome's translator small under it. */
+.hero-actions {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+}
+
+.hero .secondary {
+  min-inline-size: 160px;
+  min-block-size: 34px;
 }
 
 /* Gone once something is heard in a run (data-heard), so that it does not flash back between the
    first final and its subtitle; the first words (interim) take its place. */
 .stream:is([data-heard], :has(.utterance)) .hero {
   display: none;
+}
+
+/* The first-run download action is in the hero, which is otherwise hidden once subtitles exist:
+   switching to PLaMo after a session with the other engine still has the model to fetch. */
+body[data-first-run] .stream .hero {
+  display: grid;
 }
 
 .utterances {
@@ -597,16 +618,8 @@ body[data-state='error'] .message::before {
   content: '⚠︎ ';
 }
 
-.status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--muted);
-}
-
 .dot {
+  flex: none;
   inline-size: 8px;
   block-size: 8px;
   border-radius: 50%;

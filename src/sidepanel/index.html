@@ -9,7 +9,7 @@
   <body data-state="idle">
     <header class="topbar">
       <div class="target">
-        <span class="status"><span class="dot" aria-hidden="true"></span><span id="state-label">未準備</span></span>
+        <span class="dot" aria-hidden="true"></span>
         <span id="target-title" class="target-title">アイコンを押したタブ</span>
       </div>
       <div class="actions">
@@ -36,7 +36,10 @@
     <main id="subtitles" class="stream">
       <div class="hero">
         <p id="hero-text" class="hero-text"></p>
-        <button id="start-hero" class="primary" type="button" hidden>開始</button>
+        <div class="hero-actions">
+          <button id="start-hero" class="primary" type="button" hidden>開始</button>
+          <button id="chrome-hero" class="secondary" type="button" hidden>Chrome 翻訳で続ける</button>
+        </div>
       </div>
       <ol id="utterances" class="utterances"></ol>
       <div id="interim" class="interim" aria-hidden="true"></div>
@@ -62,6 +65,7 @@
               <label>
                 <input type="radio" name="engine" value="plamo" />
                 <span class="option-name">PLaMo</span>
+                <!-- 573MB: MODEL.bytes in src/mt/plamo/modelStore.ts (messages.ts derives its copy). -->
                 <span class="option-desc">訳が自然 · 初回に 573MB</span>
               </label>
               <label>
