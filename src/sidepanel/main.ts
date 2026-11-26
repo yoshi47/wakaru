@@ -61,7 +61,7 @@ const heroText = byId('hero-text');
 const heroStart = byId<HTMLButtonElement>('start-hero');
 const chromeHero = byId<HTMLButtonElement>('chrome-hero');
 const utterancesEl = byId('utterances');
-/** What the hero (shown until the first subtitle) says in the states that have no message of their own. */
+/** What the hero says in the states that have no message of their own (the first run has its label). */
 const HERO_TEXT: Partial<Record<State, string>> = {
   starting: '開始しています',
   running: '話し始めると、ここに字幕が出ます',
@@ -72,7 +72,8 @@ const HERO_TEXT: Partial<Record<State, string>> = {
 const STOPPED_MESSAGE = '停止しました。「開始」でもう一度聞き取ります';
 const QUIET: ReadonlySet<State> = new Set(['starting', 'running', 'stopping']);
 const engineStatus = byId('engine-status');
-const subtitles = new SubtitleView(byId('subtitles'), byId('utterances'), byId('interim'));
+const streamEl = byId('subtitles');
+const subtitles = new SubtitleView(streamEl, byId('utterances'), byId('interim'));
 const logView = new LogView(byId<HTMLTextAreaElement>('log'));
 const log = logView.log;
 
@@ -83,6 +84,8 @@ let message = '';
 let modelMissing = false;
 /** Chrome's translator can be offered as the other first-run choice (checked once). */
 let chromeAvailable = false;
+/** The previous render's first-run state: scrolling back to the hero happens on the transition. */
+let wasFirstRun = false;
 /** Each preparation step: the engine's shows in the banner and under the engine choice. */
 const readiness: Record<'langs' | 'detector' | 'engine', Check> = {
   langs: { status: 'pending', detail: '' },
@@ -138,6 +141,10 @@ function render(): void {
   // step, so that pressing 開始 does not start a 573MB download. The top-bar 開始 stays, disabled.
   const first = isFirstRun(state, backend.id, modelMissing);
   document.body.toggleAttribute('data-first-run', first);
+  // Switching to PLaMo after a session leaves the stream scrolled to its subtitles: bring the
+  // first-run action back into view.
+  if (first && !wasFirstRun) streamEl.scrollTop = 0;
+  wasFirstRun = first;
   for (const [control, button] of Object.entries(buttons)) {
     const on = enabled.includes(control as Control);
     button.disabled = !on || (control === 'start' && first);
@@ -182,7 +189,12 @@ function render(): void {
       (!hasSubtitles || QUIET.has(state) || (state === 'ready' && (message === READY_MESSAGE || message === STOPPED_MESSAGE))));
   bannerEl.toggleAttribute('data-quiet', quiet);
   // While preparing, the step under way (a first download takes minutes) rather than a fixed line.
-  heroText.textContent = state === 'preparing' ? progress?.detail || '準備しています' : (HERO_TEXT[state] ?? (text || READY_MESSAGE));
+  heroText.textContent =
+    state === 'preparing'
+      ? progress?.detail || '準備しています'
+      : first
+        ? message || FIRST_RUN_LABEL
+        : (HERO_TEXT[state] ?? (text || READY_MESSAGE));
   engineStatus.textContent = engineStatusText();
   titleEl.textContent = target ? target.title || `タブ ${target.tabId}` : 'アイコンを押したタブ';
   titleEl.title = titleEl.textContent;
@@ -327,8 +339,6 @@ async function autoPrepare(): Promise<void> {
   if (token !== autoToken || b !== backend || state !== 'idle') return;
   // The label and the engine note follow the model check, before the slower availability calls:
   // after an engine switch, a missing model should not keep showing 開始 for that long.
-  if (modelMissing) message = FIRST_RUN_LABEL;
-  else if (message === FIRST_RUN_LABEL) message = '';
   render();
   const ok = await preparableWithoutClick(b).catch((e: unknown) => {
     log(`availability check failed: ${err(e)}`);
@@ -337,7 +347,7 @@ async function autoPrepare(): Promise<void> {
   // The engine may have been switched, or 開始 pressed, while checking.
   if (token !== autoToken || b !== backend || state !== 'idle') return;
   if (!ok) {
-    message = modelMissing ? FIRST_RUN_LABEL : FIRST_MESSAGE;
+    message = modelMissing ? '' : FIRST_MESSAGE;
     render();
     return;
   }
@@ -527,10 +537,7 @@ function acceptTarget(t: Target | null): void {
 
 // Before the first render: acceptTarget() renders, and the primary action should be the download
 // from the start when PLaMo's model is missing.
-if (backend instanceof PlamoBackend) {
-  modelMissing = !(await modelFile());
-  if (modelMissing) message = FIRST_RUN_LABEL;
-}
+if (backend instanceof PlamoBackend) modelMissing = !(await modelFile());
 // Listen before reading, so that a change made while reading is not missed.
 onTargetChange(acceptTarget);
 acceptTarget(await loadTarget());
@@ -539,6 +546,8 @@ render();
 if (!demo) void checkChrome();
 if (!demo) void autoPrepare();
 if (demo) {
+  // The demo's first-run scene is PLaMo's; a saved Chrome choice would hide it.
+  backend = makeBackend('plamo');
   const { mountDemo } = await import('./demo');
   target ??= { tabId: 0, title: 'Weekly sync – Google Meet', windowId: windowId ?? 0 };
   mountDemo({

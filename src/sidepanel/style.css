@@ -337,7 +337,7 @@ button:disabled {
   opacity: 0.6;
 }
 
-/* Until the first subtitle: a large 開始 for those who have not found the one in the top bar. */
+/* The empty-state action: a large 開始, or the first-run PLaMo download (shown over old subtitles). */
 .hero {
   display: grid;
   justify-items: center;
@@ -357,7 +357,7 @@ button:disabled {
 }
 
 .hero .primary {
-  min-inline-size: 220px;
+  min-inline-size: min(220px, 100%);
   min-block-size: 48px;
   font-size: var(--text-lg);
 }
@@ -370,7 +370,7 @@ button:disabled {
 }
 
 .hero .secondary {
-  min-inline-size: 160px;
+  min-inline-size: min(160px, 100%);
   min-block-size: 34px;
 }
 
