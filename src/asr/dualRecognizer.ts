@@ -1,5 +1,12 @@
 import type { Lang } from '../shared/lang';
-import { speechRecognition, type Recognition, type RecognitionErrorEvent } from '../types/web-ai';
+import {
+  speechRecognition,
+  speechRecognitionPhrase,
+  type Recognition,
+  type RecognitionErrorEvent,
+} from '../types/web-ai';
+import { phraseHints } from './glossary';
+import { stripEndOfSentence } from './normalize';
 import { RestartGuard } from './restartGuard';
 
 export type RecognizerEvents = {
@@ -11,6 +18,14 @@ export type RecognizerEvents = {
   onFatal(lang: Lang, error: string): void;
   /** For the debug log. */
   onLog?(message: string): void;
+};
+
+export type RecognizerOptions = {
+  /** Which recognizers to run: both by default, or one for a single-language meeting. */
+  langs?: readonly Lang[];
+  /** Terms for the ja recognizer's contextual biasing (SpeechRecognition.phrases). */
+  glossary?: readonly string[];
+  now?: () => number;
 };
 
 const LOCALES: Record<Lang, string> = { ja: 'ja-JP', en: 'en-US' };
@@ -33,15 +48,21 @@ export class DualRecognizer {
   readonly #source: MediaStreamTrack;
   readonly #events: RecognizerEvents;
   readonly #now: () => number;
+  readonly #langs: readonly Lang[];
+  readonly #glossary: readonly string[];
   readonly #slots = new Map<Lang, Slot>();
   readonly #guards = new Map<Lang, RestartGuard>();
+  /** A build with SpeechRecognitionPhrase but no phrases support: do not retry on every restart. */
+  #phrasesUnsupported = false;
   #generation = 0;
   #running = false;
 
-  constructor(source: MediaStreamTrack, events: RecognizerEvents, now: () => number = () => performance.now()) {
+  constructor(source: MediaStreamTrack, events: RecognizerEvents, opts: RecognizerOptions = {}) {
     this.#source = source;
     this.#events = events;
-    this.#now = now;
+    this.#langs = opts.langs ?? ['ja', 'en'];
+    this.#glossary = opts.glossary ?? [];
+    this.#now = opts.now ?? (() => performance.now());
   }
 
   start(): void {
@@ -52,7 +73,7 @@ export class DualRecognizer {
     }
     this.#running = true;
     try {
-      for (const lang of ['ja', 'en'] as const) {
+      for (const lang of this.#langs) {
         this.#guards.set(lang, new RestartGuard());
         this.#launch(lang);
       }
@@ -90,6 +111,18 @@ export class DualRecognizer {
     if (rec.processLocally !== true) {
       throw new OnDeviceUnavailableError('オンデバイス音声認識を有効にできませんでした');
     }
+    // Contextual biasing, ja only: the en recognizer hears these Japanese words as garbage, and
+    // its job is not to transcribe them. Absent before Chrome 142, or unsupported: skip it.
+    const Phrase = speechRecognitionPhrase();
+    const hints = lang === 'ja' ? phraseHints(this.#glossary) : [];
+    if (Phrase && hints.length && 'phrases' in rec && !this.#phrasesUnsupported) {
+      try {
+        rec.phrases = hints.map((h) => new Phrase(h.phrase, h.boost));
+      } catch (e) {
+        this.#phrasesUnsupported = true;
+        this.#events.onLog?.(`${lang} phrases not set: ${message(e)}`);
+      }
+    }
     const generation = ++this.#generation;
     const track = this.#source.clone();
     const slot: Slot = { rec, generation, startedAt: this.#now(), track };
@@ -100,7 +133,7 @@ export class DualRecognizer {
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const result = e.results[i];
-        const text = result?.[0]?.transcript ?? '';
+        const text = stripEndOfSentence(result?.[0]?.transcript ?? '');
         if (result?.isFinal) this.#events.onFinal(lang, generation, text);
         else interim += text;
       }
@@ -109,6 +142,18 @@ export class DualRecognizer {
     rec.onerror = (e: RecognitionErrorEvent) => {
       if (!current()) return;
       this.#events.onLog?.(`${lang} error ${e.error} (gen ${generation})`);
+      if (e.error === 'phrases-not-supported' && !this.#phrasesUnsupported) {
+        this.#phrasesUnsupported = true;
+        this.#events.onLog?.('phrases not supported: continuing without the glossary');
+        // The spec aborts the start, but not every build follows with end: replace the
+        // recognizer ourselves if end does not come. `current()` stops a double relaunch.
+        setTimeout(() => {
+          if (!current()) return;
+          slot.rec.abort();
+          slot.track.stop();
+          if (current()) this.#relaunch(lang);
+        }, 500);
+      }
       if (FATAL.has(e.error)) {
         this.stop();
         this.#events.onFatal(lang, e.error);

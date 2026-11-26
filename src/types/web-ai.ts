@@ -11,6 +11,15 @@ export interface RecognitionAlternative {
   readonly transcript: string;
   readonly confidence: number;
 }
+
+/** One contextual-bias hint for SpeechRecognition.phrases (Chrome 142+). */
+export interface SpeechRecognitionPhrase {
+  readonly phrase: string;
+  readonly boost: number;
+}
+export interface SpeechRecognitionPhraseConstructor {
+  new (phrase: string, boost?: number): SpeechRecognitionPhrase;
+}
 export interface RecognitionResult {
   readonly isFinal: boolean;
   readonly length: number;
@@ -30,6 +39,8 @@ export interface Recognition extends EventTarget {
   continuous: boolean;
   interimResults: boolean;
   processLocally: boolean;
+  /** Contextual biasing; not in every build (see speechRecognitionPhrase()). */
+  phrases?: SpeechRecognitionPhrase[];
   start(track?: MediaStreamTrack): void;
   stop(): void;
   abort(): void;
@@ -71,6 +82,7 @@ export interface LanguageDetectorStatic {
 
 type WebAiGlobals = {
   SpeechRecognition?: RecognitionConstructor;
+  SpeechRecognitionPhrase?: SpeechRecognitionPhraseConstructor;
   Translator?: TranslatorStatic;
   LanguageDetector?: LanguageDetectorStatic;
 };
@@ -82,5 +94,7 @@ function required<T>(value: T | undefined, name: string): T {
 }
 
 export const speechRecognition = (): RecognitionConstructor => required(g.SpeechRecognition, 'SpeechRecognition');
+/** The phrase constructor for contextual biasing; undefined on builds without it (before 142). */
+export const speechRecognitionPhrase = (): SpeechRecognitionPhraseConstructor | undefined => g.SpeechRecognitionPhrase;
 export const translatorApi = (): TranslatorStatic => required(g.Translator, 'Translator');
 export const languageDetectorApi = (): LanguageDetectorStatic => required(g.LanguageDetector, 'LanguageDetector');

@@ -1,12 +1,15 @@
 import type { Lang } from '../shared/lang';
 
 export type PrepareProgress = { phase: 'download' | 'load'; ratio?: number };
+/** One translation direction the session will use. */
+export type Direction = readonly [from: Lang, to: Lang];
 
 export interface TranslatorBackend {
   readonly id: 'plamo' | 'chrome';
   /** False before prepare() and after dispose(); for PLaMo also while it reloads after a crash. */
   readonly ready: boolean;
-  prepare(onProgress?: (p: PrepareProgress) => void): Promise<void>;
+  /** `directions`: what the session will translate; Chrome makes only these (PLaMo ignores it). */
+  prepare(onProgress?: (p: PrepareProgress) => void, directions?: readonly Direction[]): Promise<void>;
   /** `key`: the paragraph. A paragraph that grows comes again with the same key and more text. */
   translate(text: string, from: Lang, to: Lang, signal: AbortSignal, opts: { key: number }): Promise<string>;
   /**

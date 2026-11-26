@@ -1,9 +1,9 @@
 import { LangDetector } from '../asr/langDetect';
 import { startTabAudio } from '../audio/tabAudio';
-import type { PrepareProgress, TranslatorBackend } from '../mt/backend';
+import type { Direction, PrepareProgress, TranslatorBackend } from '../mt/backend';
 import { ChromeBackend } from '../mt/chrome';
 import { PlamoBackend } from '../mt/plamo/backend';
-import { loadSettings, saveSettings, type Settings } from '../settings';
+import { loadSettings, saveSettings, type LangMode, type Settings } from '../settings';
 import { loadTarget, onTargetChange, type Target } from '../shared/target';
 import { modelFile } from '../mt/plamo/modelStore';
 import { languageDetectorApi, speechRecognition, translatorApi } from '../types/web-ai';
@@ -12,7 +12,21 @@ import { Session } from './session';
 import { canOfferChrome, CONTROLS, isFirstRun, next, type Control, type Event, type State } from './state';
 import { byId, LogView, SubtitleView, type Check } from './ui';
 
-const LOCALES = ['ja-JP', 'en-US'];
+const LOCALES: Record<LangMode, readonly string[]> = {
+  auto: ['ja-JP', 'en-US'],
+  ja: ['ja-JP'],
+  en: ['en-US'],
+};
+/** The translation directions the session will use; Chrome makes only these. */
+const directionsFor = (mode: LangMode): readonly Direction[] =>
+  mode === 'auto'
+    ? [
+        ['ja', 'en'],
+        ['en', 'ja'],
+      ]
+    : mode === 'ja'
+      ? [['ja', 'en']]
+      : [['en', 'ja']];
 const ENGINE_LABEL = { plamo: 'PLaMo', chrome: 'Chrome 翻訳' } as const;
 
 const err = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -35,6 +49,13 @@ const STATE_LABEL: Record<State, string> = {
   error: 'エラー',
 };
 
+/** Only auto needs a warning: the English recognizer hears Japanese words as English. */
+const LANG_DESC: Record<LangMode, string> = {
+  auto: '英語側の誤認識が出ることがあります',
+  ja: '',
+  en: '',
+};
+
 /** The top bar shows the one action of the state, or a spinner while it waits. */
 const BUSY: ReadonlySet<State> = new Set(['preparing', 'starting', 'stopping']);
 
@@ -52,9 +73,22 @@ const busyButton = byId<HTMLButtonElement>('busy');
 const actionsEl = document.querySelector<HTMLElement>('.actions')!;
 const engineField = byId<HTMLFieldSetElement>('engine');
 const engineInputs = [...engineField.querySelectorAll<HTMLInputElement>('input[name="engine"]')];
+const langField = byId<HTMLFieldSetElement>('lang');
+const langInputs = [...langField.querySelectorAll<HTMLInputElement>('input[name="lang"]')];
+const langHelp = byId<HTMLButtonElement>('lang-help');
+const langDesc = byId('lang-desc');
+const heroLangSetup = byId('hero-lang-setup');
+const heroLangField = byId<HTMLFieldSetElement>('hero-lang');
+const heroLangInputs = [...heroLangField.querySelectorAll<HTMLInputElement>('input[name="hero-lang"]')];
+const heroLangDesc = byId('hero-lang-desc');
+const engineHint = byId('engine-hint');
+const glossaryEl = byId<HTMLTextAreaElement>('glossary');
 const messageEl = byId('message');
 const progressEl = byId<HTMLProgressElement>('progress');
-const engineNote = byId('engine-note');
+const settingsNote = byId('settings-note');
+engineHint.textContent = `PLaMo は訳が自然で、初回に${MODEL_MB}MBのモデルをダウンロードします。Chrome 翻訳は軽くて速く、直訳寄りです。`;
+/** Which setting the shared note was focused from, to return the focus when it unlocks. */
+let noteFrom: 'engine' | 'lang' | null = null;
 const titleEl = byId('target-title');
 const bannerEl = byId('banner');
 const heroText = byId('hero-text');
@@ -86,7 +120,9 @@ let modelMissing = false;
 let chromeAvailable = false;
 /** The previous render's first-run state: scrolling back to the hero happens on the transition. */
 let wasFirstRun = false;
-/** Each preparation step: the engine's shows in the banner and under the engine choice. */
+/** The previous render's download-bar state: the bar is scrolled into view when it appears. */
+let wasDownloading = false;
+/** Each preparation step: the engine's shows in the hero and under the engine choice. */
 const readiness: Record<'langs' | 'detector' | 'engine', Check> = {
   langs: { status: 'pending', detail: '' },
   detector: { status: 'pending', detail: '' },
@@ -114,6 +150,8 @@ let detector: LangDetector | null = null;
 let session: Session | null = null;
 /** Counts the sessions started, to tell their job ids apart. */
 let runs = 0;
+/** A language change needs its pack/detector on the next 開始, not a state change now. */
+let langNeedsPrepare = false;
 const windowId = (await chrome.windows.getCurrent()).id;
 let target: Target | null = null;
 
@@ -135,6 +173,8 @@ function render(): void {
   const active = document.activeElement;
   const focusInActions = actionsEl.contains(active) || active === heroStart || active === chromeHero;
   const focusInEngine = engineField.contains(active);
+  const focusOnLang = langField.contains(active);
+  const focusOnHeroLang = heroLangField.contains(active);
   document.body.dataset.state = state;
   const enabled = CONTROLS[state];
   // 開始 gives way to the model download when PLaMo's model is missing: the download is its own
@@ -160,15 +200,44 @@ function render(): void {
   if (focusInActions && !actionsEl.contains(document.activeElement)) {
     actionsEl.querySelector<HTMLButtonElement>('button:not([hidden])')?.focus();
   }
-  engineField.disabled = !enabled.includes('engine');
-  engineNote.hidden = !engineField.disabled;
+  const settingsLocked = !enabled.includes('engine');
+  engineField.disabled = settingsLocked;
+  langField.disabled = settingsLocked;
+  settingsNote.hidden = !settingsLocked;
   // A hidden element referenced by aria-describedby is still read: only while it is shown.
-  engineField.setAttribute('aria-describedby', engineField.disabled ? 'engine-status engine-note' : 'engine-status');
-  if (focusInEngine && engineField.disabled) engineNote.focus();
-  else if (document.activeElement === engineNote && !engineField.disabled) {
-    engineField.querySelector<HTMLInputElement>('input:checked')?.focus();
+  engineField.setAttribute(
+    'aria-describedby',
+    settingsLocked ? 'engine-hint engine-status settings-note' : 'engine-hint engine-status',
+  );
+  const desc = LANG_DESC[settings.langMode];
+  langDesc.textContent = desc;
+  langDesc.hidden = !desc;
+  langHelp.hidden = !desc;
+  const langDescribed = [desc ? 'lang-desc' : null, settingsLocked ? 'settings-note' : null].filter(Boolean);
+  if (langDescribed.length) langField.setAttribute('aria-describedby', langDescribed.join(' '));
+  else langField.removeAttribute('aria-describedby');
+  // The shared note: keep the focus in the sheet when a choice is disabled under it.
+  if ((focusInEngine || focusOnLang) && settingsLocked) {
+    noteFrom = focusOnLang ? 'lang' : 'engine';
+    settingsNote.focus();
+  } else if (noteFrom && !settingsLocked) {
+    (noteFrom === 'lang' ? langField : engineField).querySelector<HTMLInputElement>('input:checked')?.focus();
+    noteFrom = null;
   }
   for (const input of engineInputs) input.checked = input.value === backend.id;
+  for (const input of langInputs) input.checked = input.value === settings.langMode;
+  // The start screen shows the language only when a session can start (ready). The first-run
+  // download and the error screen keep it in the settings.
+  const showHeroLang = state === 'ready';
+  heroLangSetup.hidden = !showHeroLang;
+  heroLangField.disabled = !showHeroLang;
+  heroLangDesc.textContent = desc;
+  if (desc) heroLangField.setAttribute('aria-describedby', 'hero-lang-desc');
+  else heroLangField.removeAttribute('aria-describedby');
+  if (focusOnHeroLang && heroLangSetup.hidden) {
+    actionsEl.querySelector<HTMLButtonElement>('button:not([hidden])')?.focus();
+  }
+  for (const input of heroLangInputs) input.checked = input.value === settings.langMode;
   // While preparing, the engine's step (a download takes minutes) says more than the message. The
   // percentage stays on the bar: in the live region it would be announced every 8MB.
   const engineStep = readiness.engine;
@@ -179,14 +248,23 @@ function render(): void {
   progressEl.hidden = progress?.ratio === undefined;
   progressEl.value = progress?.ratio ?? 0;
   progressEl.setAttribute('aria-valuetext', `${Math.floor((progress?.ratio ?? 0) * 100)}%`);
-  // Until the first subtitle the hero says it; while listening the top bar does. Kept as a live
-  // region either way (see .banner[data-quiet]).
+  // The bar is in the hero, which old subtitles would otherwise hide: show it while downloading,
+  // and bring it into view when it appears (as the first-run action does for its button).
+  const downloading = progress?.ratio !== undefined;
+  if (downloading && !wasDownloading) streamEl.scrollTop = 0;
+  wasDownloading = downloading;
+  document.body.toggleAttribute('data-downloading', downloading);
+  // Until the first subtitle the hero says it; while listening the top bar does. A download shows
+  // in the hero (the bar and the step's detail), so the banner keeps that text for screen readers
+  // only. Kept as a live region either way (see .banner[data-quiet]).
   const hasSubtitles = utterancesEl.childElementCount > 0;
   const quiet =
     !text ||
     (state !== 'error' &&
-      progress?.ratio === undefined &&
-      (!hasSubtitles || QUIET.has(state) || (state === 'ready' && (message === READY_MESSAGE || message === STOPPED_MESSAGE))));
+      (progress?.ratio !== undefined ||
+        !hasSubtitles ||
+        QUIET.has(state) ||
+        (state === 'ready' && (message === READY_MESSAGE || message === STOPPED_MESSAGE))));
   bannerEl.toggleAttribute('data-quiet', quiet);
   // While preparing, the step under way (a first download takes minutes) rather than a fixed line.
   heroText.textContent =
@@ -203,7 +281,7 @@ function render(): void {
 /** The line under the engine choice. */
 function engineStatusText(): string {
   const { status, detail } = readiness.engine;
-  // The detail, not a fixed line: the open sheet covers the banner that shows it too.
+  // The detail, not a fixed line: the open sheet covers the hero that shows it too.
   if (status === 'working') return detail || '準備しています';
   if (status === 'error') return `準備できませんでした: ${detail}`;
   if (status === 'pending') {
@@ -260,21 +338,30 @@ function prepareAll(opts: { packsAvailable?: boolean } = {}): Promise<boolean> {
     readiness.engine = engineReadiness(preparing, p);
     render();
   };
+  const locales = [...LOCALES[settings.langMode]];
+  const directions = directionsFor(settings.langMode);
+  const packLabel = locales.map((l) => (l === 'ja-JP' ? '日本語' : '英語')).join(' · ');
+  const detectorWork: Promise<LangDetector | null> =
+    settings.langMode === 'ja'
+      ? Promise.resolve(null)
+      : detector
+        ? Promise.resolve(detector)
+        : attempt(() => LangDetector.create());
   const tasks = [
     // Why not install() when the packs are there already: outside a click it may be refused.
-    step('langs', '言語パック', opts.packsAvailable ? Promise.resolve(true) : attempt(() => speechRecognition().install({ langs: LOCALES, processLocally: true })), (ok) => {
+    step('langs', '言語パック', opts.packsAvailable ? Promise.resolve(true) : attempt(() => speechRecognition().install({ langs: locales, processLocally: true })), (ok) => {
       if (!ok) throw new Error('install() が false を返しました');
-      return { status: 'ok', detail: '日本語 · 英語' };
+      return { status: 'ok', detail: packLabel };
     }),
-    step('detector', '言語判定', detector ? Promise.resolve(detector) : attempt(() => LangDetector.create()), (d) => {
-      detector = d;
+    step('detector', '言語判定', detectorWork, (d) => {
+      if (d) detector = d;
       return { status: 'ok', detail: '' };
     }),
     step(
       'engine',
       ENGINE_LABEL[preparing.id],
       // Chrome's Translator.create() must start within the click; PLaMo needs no gesture.
-      preparing instanceof PlamoBackend ? disposing.then(() => preparing.prepare(onProgress)) : attempt(() => preparing.prepare(onProgress)),
+      preparing instanceof PlamoBackend ? disposing.then(() => preparing.prepare(onProgress)) : attempt(() => preparing.prepare(onProgress, directions)),
       () => engineReadiness(preparing),
     ),
   ];
@@ -290,6 +377,7 @@ function prepareAll(opts: { packsAvailable?: boolean } = {}): Promise<boolean> {
       return false;
     }
     log(`prepared ${preparing.id} in ${Math.round(performance.now() - start)}ms`);
+    langNeedsPrepare = false;
     return dispatch('prepared', READY_MESSAGE);
   });
 }
@@ -297,32 +385,41 @@ function prepareAll(opts: { packsAvailable?: boolean } = {}): Promise<boolean> {
 /** Whether everything is on this machine already, so that preparing needs no click. */
 async function preparableWithoutClick(b: TranslatorBackend): Promise<boolean> {
   const SR = speechRecognition();
+  const directions = directionsFor(settings.langMode);
   const checks = [
-    ...LOCALES.map((l) => SR.available({ langs: [l], processLocally: true })),
-    languageDetectorApi().availability(),
+    ...LOCALES[settings.langMode].map((l) => SR.available({ langs: [l], processLocally: true })),
+    ...(settings.langMode === 'ja' ? [] : [languageDetectorApi().availability()]),
     ...(b instanceof PlamoBackend
       ? [modelFile().then((f) => (f ? 'available' : 'downloadable'))]
-      : [
-          translatorApi().availability({ sourceLanguage: 'ja', targetLanguage: 'en' }),
-          translatorApi().availability({ sourceLanguage: 'en', targetLanguage: 'ja' }),
-        ]),
+      : directions.map(([s, t]) => translatorApi().availability({ sourceLanguage: s, targetLanguage: t }))),
   ];
   return (await Promise.all(checks)).every((a) => a === 'available');
 }
 
 /** Whether Chrome's translator can be offered as the other first-run choice. */
 async function checkChrome(): Promise<void> {
+  const mode = settings.langMode;
   try {
-    const [jaToEn, enToJa] = await Promise.all([
-      translatorApi().availability({ sourceLanguage: 'ja', targetLanguage: 'en' }),
-      translatorApi().availability({ sourceLanguage: 'en', targetLanguage: 'ja' }),
-    ]);
-    chromeAvailable = canOfferChrome(jaToEn, enToJa);
+    let available: boolean;
+    if (mode === 'auto') {
+      const [jaToEn, enToJa] = await Promise.all([
+        translatorApi().availability({ sourceLanguage: 'ja', targetLanguage: 'en' }),
+        translatorApi().availability({ sourceLanguage: 'en', targetLanguage: 'ja' }),
+      ]);
+      available = canOfferChrome(jaToEn, enToJa);
+    } else {
+      const [from, to] = directionsFor(mode)[0]!;
+      available = (await translatorApi().availability({ sourceLanguage: from, targetLanguage: to })) !== 'unavailable';
+    }
+    // The language may have changed while the availability calls were in flight.
+    if (mode !== settings.langMode) return;
+    chromeAvailable = available;
   } catch (e) {
+    if (mode !== settings.langMode) return;
     log(`chrome availability check failed: ${err(e)}`);
     chromeAvailable = false;
   }
-  if (isFirstRun(state, backend.id, modelMissing)) render();
+  if (mode === settings.langMode && isFirstRun(state, backend.id, modelMissing)) render();
 }
 
 /** Prepares in the background when nothing needs downloading: 開始 then starts at once. */
@@ -369,11 +466,11 @@ function onPrimaryClick(): void {
       render();
       return;
     }
-    if (backend.ready) {
+    if (backend.ready && !langNeedsPrepare) {
       void startSession();
       return;
     }
-    // PLaMo failed to load again after a crash, for example: prepared again below.
+    // PLaMo failed to load again after a crash, or the language changed: prepared below.
     readiness.engine = engineReadiness(backend);
     dispatch('lost');
   }
@@ -401,7 +498,7 @@ async function startSession(): Promise<void> {
   // Before any await: a second click would try to capture the tab twice.
   if (!dispatch('start', '開始しています')) return;
   const tab = target;
-  if (!tab || !detector) {
+  if (!tab || (settings.langMode !== 'ja' && !detector)) {
     dispatch('startFailed', tab ? '準備ができていません。もう一度「開始」を押してください' : '対象タブがありません。会議のタブでアイコンを押してください');
     void loadTarget().then(acceptTarget);
     return;
@@ -411,7 +508,7 @@ async function startSession(): Promise<void> {
     session = await Session.start({
       audio: (o) => startTabAudio(tab.tabId, o),
       settings,
-      detect: detector.detect,
+      detect: detector?.detect ?? (async () => ({ lang: 'und', confidence: 0 })),
       backend,
       events: {
         onInterim: (i) => subtitles.setInterim(i),
@@ -504,6 +601,61 @@ engineField.addEventListener('change', () => {
   if (!switchEngine(engine)) return;
   if (!demo) void autoPrepare();
 });
+
+// The meeting language changes which packs and detector to prepare, not the engine: no dispose. The
+// recognizer is made per session, so the next 開始 uses the new mode.
+function applyLangMode(langMode: LangMode | undefined): void {
+  if (!langMode || langMode === settings.langMode) return;
+  if (!CONTROLS[state].includes('engine')) return;
+  autoToken++;
+  settings = { ...settings, langMode };
+  void saveSettings(settings);
+  readiness.langs = { status: 'pending', detail: '' };
+  readiness.detector = { status: 'pending', detail: '' };
+  log(`language mode=${langMode}`);
+  if (demo) {
+    render();
+    return;
+  }
+  // The first-run Chrome choice depends on the directions this mode needs.
+  void checkChrome();
+  // Do not move to idle/preparing here: that hides the hero language and start button. The new
+  // mode's pack/detector/translator are prepared within the next 開始 click.
+  langNeedsPrepare = true;
+  render();
+}
+
+langField.addEventListener('change', () => {
+  applyLangMode(langInputs.find((i) => i.checked)?.value as LangMode | undefined);
+});
+
+heroLangField.addEventListener('change', () => {
+  applyLangMode(heroLangInputs.find((i) => i.checked)?.value as LangMode | undefined);
+});
+
+glossaryEl.value = settings.glossary.join('\n');
+const saveGlossary = () => {
+  const glossary = glossaryEl.value
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  settings = { ...settings, glossary };
+  void saveSettings(settings);
+  log(`glossary: ${glossary.length} terms (next start)`);
+};
+let glossaryTimer: ReturnType<typeof setTimeout> | undefined;
+// Save while typing, and at once on blur: closing the panel with an edit in flight should not
+// lose it.
+glossaryEl.addEventListener('input', () => {
+  clearTimeout(glossaryTimer);
+  glossaryTimer = setTimeout(saveGlossary, 500);
+});
+glossaryEl.addEventListener('change', () => {
+  clearTimeout(glossaryTimer);
+  saveGlossary();
+});
+// The side panel may close before the 500ms debounce fires.
+window.addEventListener('pagehide', saveGlossary);
 
 byId('to-latest').addEventListener('click', () => subtitles.scrollToLatest());
 

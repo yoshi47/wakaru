@@ -40,6 +40,13 @@ describe('normalize', () => {
     expect(normalize('en', ' Most of the  tests are done ')).toBe('Most of the tests are done');
   });
 
+  it('drops the recognizer’s end-of-sentence token', () => {
+    expect(normalize('en', 'E </S>')).toBe('E');
+    expect(normalize('en', 'Hi </S>')).toBe('Hi');
+    expect(normalize('en', 'What is temperature </S>')).toBe('What is temperature');
+    expect(normalize('ja', 'はい </S>')).toBe('はい');
+  });
+
   it('applies normalizeJa to Japanese', () => {
     expect(normalize('ja', ' 来週 の リリース')).toBe('来週のリリース');
   });

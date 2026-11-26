@@ -1,4 +1,5 @@
 import type { Lang } from '../shared/lang';
+import { substantialJa } from './japanese';
 
 /** A final result from one recognizer, already normalized. `at` is performance.now(). */
 export type Final = { lang: Lang; text: string; at: number; synthetic: boolean };
@@ -179,11 +180,7 @@ const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
 // What the wrong recognizer produces from the other language is Latin letters on the ja side
 // ("OK", "No", "EX") and Spanish- or German-looking text on the en side (Task 1 and 3 logs). A
 // real utterance has at least this many hiragana or kanji, or is confidently English and longer
-// than a short reply. Why not katakana: the ja recognizer may spell English speech in katakana
-// ("サンキューソーマッチ"), which would then show twice next to the English.
-const JA_SUBSTANTIAL_CHARS = 4;
-const substantialJa = (text: string) => (text.match(/[\p{Script=Hiragana}\p{Script=Han}]/gu)?.length ?? 0) >= JA_SUBSTANTIAL_CHARS;
-
+// than a short reply.
 // Japanese and English lengths are not really comparable. When both sides are valid but not both
 // real utterances, one is a short word or a misrecognition (measured), and the longer side wins;
 // Task 6 collects the cases where this is wrong.
