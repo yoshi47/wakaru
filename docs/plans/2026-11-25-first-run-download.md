@@ -32,21 +32,21 @@ Chrome 翻訳に切り替えれば 573MB は要らないが、その選択肢は
 ### `src/sidepanel/messages.ts`（新規）
 
 - `MODEL_MB`（`MODEL.bytes` から丸める。573MB を2か所に書かない）、`FIRST_RUN_LABEL`、`FIRST_MESSAGE` を置き、main.ts と demo.ts で共有する
-- `FIRST_RUN_LABEL = 'PLaMo の準備'`（初回の見出し）。説明の文章は置かない
+- `FIRST_RUN_LABEL = 'PLaMo の準備'`（初回の見出し）。説明の文章は置かない。`message` には入れず、render が `first` のときにヒーローへ出す（live region で二重に読ませない）
 - `FIRST_MESSAGE` は「足りない言語パックや翻訳モデルをダウンロードして」に直す。PLaMo でモデルだけある場合に、翻訳モデルまで落とすと言わないため
 
 ### `src/sidepanel/main.ts`
 
 - `modelMissing` を持つ。engine の判定は `isFirstRun` に任せ、`modelMissing` 単独で分岐しない
-- 起動時: `onTargetChange` と `acceptTarget(await loadTarget())` より前に、plamo のときだけ `modelFile()` を見て `modelMissing` を決める。`acceptTarget` が render するので、最初の描画で開始が出ないようにする。無ければ `message = FIRST_RUN_LABEL`
-- `autoPrepare()`: `modelFile()` を再確認して `modelMissing` を更新し、その直後に `message` と `render()` も更新する（availability の待ちの間、開始のままにしない）。availability が false のときは、`modelMissing` なら `FIRST_RUN_LABEL`、そうでなければ `FIRST_MESSAGE`
+- 起動時: `onTargetChange` と `acceptTarget(await loadTarget())` より前に、plamo のときだけ `modelFile()` を見て `modelMissing` を決める。`acceptTarget` が render するので、最初の描画で開始が出ないようにする。`message` は空のまま（見出しは `first` から出す）
+- `autoPrepare()`: `modelFile()` を再確認して `modelMissing` を更新し、その直後に `render()` する（availability の待ちの間、開始のままにしない）。availability が false のときは、`modelMissing` なら `message = ''`（見出しは render）、そうでなければ `FIRST_MESSAGE`
 - `onStartClick` を `onPrimaryClick` に改名。`isFirstRun(state, backend.id, modelMissing)` なら `dispatch('prepare')` → `prepareAll()` で止める。`startSession()` を呼ばない
 - この分岐では `await` しない。`modelFile()` をクリックの中で呼ぶと、`install()` と `Translator.create()` に必要なユーザー操作が切れる（`main.ts:222-248`）。判定は起動時と `autoPrepare()` で更新したフラグで行う
-- `render()`: `first = isFirstRun(...)`。ヒーローの主を「ダウンロード（573MB）」、その下に「Chrome 翻訳で続ける」（`first && chromeAvailable` のときだけ）にする。トップバーの開始は「開始」のまま `disabled` にする（グレーアウト）。字幕が残っていても初回はヒーローを出す（`body[data-first-run]`）
+- `render()`: `first = isFirstRun(...)`。ヒーローの見出しは `first ? message || FIRST_RUN_LABEL : ...`、主を「ダウンロード（573MB）」、その下に「Chrome 翻訳で続ける」（`first && chromeAvailable` のときだけ）にする。トップバーの開始は「開始」のまま `disabled` にする（グレーアウト）。字幕が残っていても初回はヒーローを出し（`body[data-first-run]`）、`first` になった瞬間に `streamEl.scrollTop = 0` でヒーローを画面に戻す
 - `chromeAvailable` を起動時に `translatorApi().availability()` で調べる（`checkChrome`）。demo では hook で与える。ヒーローに Chrome の副ボタン（`chromeHero`）を置き、`first && chromeAvailable` のときだけ出す
 - `onChromeClick`: `switchEngine('chrome')` → `dispatch('prepare')` → `prepareAll()`。クリックの中で `Translator.create()` を始める
 - エンジン切替の処理を `switchEngine(engine)` に切り出す。設定シートの切替と Chrome の選択で共有する
-- `checkChrome` は `chromeAvailable` を更新して、初回なら `render()` するだけ。文言は `FIRST_RUN_LABEL` で固定し、Chrome のボタンの表示だけを変える
+- `checkChrome` は `chromeAvailable` を更新して、初回なら `render()` するだけ。`message` は触らない（見出しは render が `first` から出す）
 - `prepareAll()`:
   - `onProgress` で `phase === 'load'` になったら `modelMissing = false`。ダウンロードは終わってファイルがある。読み込みに失敗しても、次の開始から読み直せる
   - 失敗メッセージの「「開始」でもう一度試します」を、`modelMissing` なら「もう一度押すと、ダウンロードは続きから再開します」にする。主ボタンのラベルを名指しせず、操作を書く
@@ -58,11 +58,11 @@ Chrome 翻訳に切り替えれば 573MB は要らないが、その選択肢は
 
 - 左上の状態ラベル（未準備・準備中・準備完了など）をやめる。状態は主ボタン、スピナー、バナー、色の点で分かる。点はタブ名の横に置く。`#state-label` と `stateLabel` を消し、スピナーの `aria-label` には `STATE_LABEL` を残す
 - 字幕が残っていても、初回はヒーローを出す（`body[data-first-run] .stream .hero { display: grid }`）。Chrome で一度使った後に PLaMo へ切り替え、モデルが無いときに、ヒーローが隠れてダウンロードのボタンが出ないのを避ける
-- ヒーローのボタンを `.hero-actions` にまとめ、主を 48px / 220px、Chrome の副を 34px / 160px にして縦に並べる
+- ヒーローのボタンを `.hero-actions` にまとめ、主を 48px / `min(220px, 100%)`、Chrome の副を 34px / `min(160px, 100%)` にして縦に並べる
 
 ### `src/sidepanel/demo.ts`
 
-- `set(state, message, readiness, modelMissing, chromeAvailable)` にする。idle 場面は `FIRST_RUN_LABEL`、true、true にする。モデルを消さずに PLaMo の準備と Chrome のボタンを確認できるようにする
+- `set(state, message, readiness, modelMissing, chromeAvailable)` にする。idle 場面は空の message、true、true にする。demo は起動時に backend を PLaMo に固定する（保存された Chrome だと初回の画面が出ない）
 
 ### テスト
 
@@ -80,9 +80,9 @@ Chrome 翻訳に切り替えれば 573MB は要らないが、その選択肢は
 5. ダウンロードを失敗させる（DevTools のオフラインなど）と idle に戻り、メッセージが「もう一度押すと、ダウンロードは続きから再開します」と言う。オンラインに戻して押すと続きから再開する
 6. ダウンロード中に閉じて開き直すと PLaMo の準備の画面が戻り、押すと続きから再開する
 7. ダウンロード中に対象タブを別のページへ移す。開始を押すと「開始できませんでした」になる。アイコンを押し直すと、モデルはあるので開始できる（`docs/plans/2026-11-20-mvp.md:125-126`）
-8. 設定シートで Chrome → PLaMo に戻すと、モデルが無ければ PLaMo の準備の画面に戻る。Chrome の Translator が使えない環境では Chrome のボタンが出ない（`canOfferChrome` のテストで確認）
+8. 字幕を残したまま設定シートで Chrome → PLaMo に戻すと、モデルが無ければ PLaMo の準備の画面がスクロールの上に出る（`streamEl.scrollTop = 0`）。Chrome の Translator が使えない環境では Chrome のボタンが出ない（`canOfferChrome` のテストで確認）
 9. モデルがある状態では、今までどおり開いた時に自動で読み込んで ready になる。ダウンロード後に ready → lost になっても「開始」のまま
-10. `?demo` の idle 場面で、PLaMo の準備の画面と Chrome のボタン、グレーアウトした開始、ヒーローを確認する（`data-first-run` で字幕があってもヒーローが出る）
+10. `?demo` の idle 場面で、PLaMo の準備の画面と Chrome のボタン、グレーアウトした開始、ヒーローを確認する（demo は PLaMo 固定。`data-first-run` で字幕があってもヒーローが出る）
 
 ## やらないこと
 
