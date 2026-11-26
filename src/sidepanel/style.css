@@ -356,12 +356,12 @@ button:disabled {
 }
 
 .hero .primary {
-  min-inline-size: 160px;
-  min-block-size: 44px;
+  min-inline-size: 220px;
+  min-block-size: 48px;
   font-size: var(--text-lg);
 }
 
-/* The first-run choice: the PLaMo download and, under it, Chrome's translator. */
+/* The first-run choice: PLaMo's download large, Chrome's translator small under it. */
 .hero-actions {
   display: grid;
   justify-items: center;
@@ -370,7 +370,7 @@ button:disabled {
 
 .hero .secondary {
   min-inline-size: 160px;
-  min-block-size: 40px;
+  min-block-size: 34px;
 }
 
 /* Gone once something is heard in a run (data-heard), so that it does not flash back between the

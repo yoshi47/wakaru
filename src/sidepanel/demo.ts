@@ -5,7 +5,7 @@
 import type { Piece } from '../asr/paragrapher';
 import type { Outcome } from '../mt/queue';
 import type { Lang } from '../shared/lang';
-import { FIRST_RUN_CHOICE_MESSAGE } from './messages';
+import { FIRST_RUN_LABEL } from './messages';
 import type { State } from './state';
 import type { Check, SubtitleView } from './ui';
 type Readiness = { langs: Check; detector: Check; engine: Check };
@@ -39,7 +39,7 @@ const ok = (detail = ''): Check => ({ status: 'ok', detail });
 const READY: Readiness = { langs: ok('日本語 · 英語'), detector: ok(), engine: ok('GPU で動いています') };
 
 const SCENES: Record<State, [string, Readiness, boolean?, boolean?]> = {
-  idle: [FIRST_RUN_CHOICE_MESSAGE, { langs: { status: 'pending', detail: '' }, detector: { status: 'pending', detail: '' }, engine: { status: 'pending', detail: 'PLaMo' } }, true, true],
+  idle: [FIRST_RUN_LABEL, { langs: { status: 'pending', detail: '' }, detector: { status: 'pending', detail: '' }, engine: { status: 'pending', detail: 'PLaMo' } }, true, true],
   preparing: ['準備しています', { langs: ok('日本語 · 英語'), detector: ok(), engine: { status: 'working', detail: 'PLaMo をダウンロード中（パネルを閉じると中断）', ratio: 0.45 } }],
   ready: ['「開始」を押すと、対象タブの音声を聞き取ります', READY],
   starting: ['開始しています', READY],

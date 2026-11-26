@@ -7,7 +7,7 @@ import { loadSettings, saveSettings, type Settings } from '../settings';
 import { loadTarget, onTargetChange, type Target } from '../shared/target';
 import { modelFile } from '../mt/plamo/modelStore';
 import { languageDetectorApi, speechRecognition, translatorApi } from '../types/web-ai';
-import { FIRST_MESSAGE, FIRST_RUN_CHOICE_MESSAGE, MODEL_MB, MODEL_MISSING_MESSAGE } from './messages';
+import { FIRST_MESSAGE, FIRST_RUN_LABEL, MODEL_MB } from './messages';
 import { Session } from './session';
 import { canOfferChrome, CONTROLS, isFirstRun, next, type Control, type Event, type State } from './state';
 import { byId, LogView, SubtitleView, type Check } from './ui';
@@ -83,8 +83,6 @@ let message = '';
 let modelMissing = false;
 /** Chrome's translator can be offered as the other first-run choice (checked once). */
 let chromeAvailable = false;
-/** The first-run message: the choice when Chrome is available, otherwise the download alone. */
-const firstRunMessage = () => (chromeAvailable ? FIRST_RUN_CHOICE_MESSAGE : MODEL_MISSING_MESSAGE);
 /** Each preparation step: the engine's shows in the banner and under the engine choice. */
 const readiness: Record<'langs' | 'detector' | 'engine', Check> = {
   langs: { status: 'pending', detail: '' },
@@ -145,7 +143,7 @@ function render(): void {
     button.disabled = !on || (control === 'start' && first);
     if (ACTIONS.has(control as Control)) button.hidden = !on;
   }
-  heroStart.textContent = first ? `PLaMo を使う（${MODEL_MB}MB）` : '開始';
+  heroStart.textContent = first ? `ダウンロード（${MODEL_MB}MB）` : '開始';
   chromeHero.hidden = !(first && chromeAvailable);
   chromeHero.disabled = chromeHero.hidden;
   heroStart.hidden = !enabled.includes('start');
@@ -312,13 +310,7 @@ async function checkChrome(): Promise<void> {
     log(`chrome availability check failed: ${err(e)}`);
     chromeAvailable = false;
   }
-  if (
-    isFirstRun(state, backend.id, modelMissing) &&
-    (message === MODEL_MISSING_MESSAGE || message === FIRST_RUN_CHOICE_MESSAGE)
-  ) {
-    message = firstRunMessage();
-    render();
-  }
+  if (isFirstRun(state, backend.id, modelMissing)) render();
 }
 
 /** Prepares in the background when nothing needs downloading: 開始 then starts at once. */
@@ -335,8 +327,8 @@ async function autoPrepare(): Promise<void> {
   if (token !== autoToken || b !== backend || state !== 'idle') return;
   // The label and the engine note follow the model check, before the slower availability calls:
   // after an engine switch, a missing model should not keep showing 開始 for that long.
-  if (modelMissing) message = firstRunMessage();
-  else if (message === MODEL_MISSING_MESSAGE || message === FIRST_RUN_CHOICE_MESSAGE) message = '';
+  if (modelMissing) message = FIRST_RUN_LABEL;
+  else if (message === FIRST_RUN_LABEL) message = '';
   render();
   const ok = await preparableWithoutClick(b).catch((e: unknown) => {
     log(`availability check failed: ${err(e)}`);
@@ -345,7 +337,7 @@ async function autoPrepare(): Promise<void> {
   // The engine may have been switched, or 開始 pressed, while checking.
   if (token !== autoToken || b !== backend || state !== 'idle') return;
   if (!ok) {
-    message = modelMissing ? firstRunMessage() : FIRST_MESSAGE;
+    message = modelMissing ? FIRST_RUN_LABEL : FIRST_MESSAGE;
     render();
     return;
   }
@@ -537,7 +529,7 @@ function acceptTarget(t: Target | null): void {
 // from the start when PLaMo's model is missing.
 if (backend instanceof PlamoBackend) {
   modelMissing = !(await modelFile());
-  if (modelMissing) message = firstRunMessage();
+  if (modelMissing) message = FIRST_RUN_LABEL;
 }
 // Listen before reading, so that a change made while reading is not missed.
 onTargetChange(acceptTarget);
