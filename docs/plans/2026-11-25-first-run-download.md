@@ -8,7 +8,7 @@
 
 ## 方針
 
-- 開始は「押したらすぐ聞き取りが始まる」ときだけ出す。PLaMo のモデル（573MB）は開始クリックではダウンロードしない
+- 開始は「押したらすぐ聞き取りが始まる」ときだけ有効にする。PLaMo のモデル（573MB）は開始クリックではダウンロードしない
 - engine=plamo かつ OPFS にモデルが無い idle では、主アクションをダウンロードにする。押すと `prepareAll()`（言語パック、言語判定、モデルのダウンロードと読み込み）を最後まで行い、ready で止める。開始はその後に出す
 - 判定は `isFirstRun(state, backend.id, modelMissing)` の1か所に集める。`modelMissing` 単独で分岐しない。Chrome では `modelMissing` を false にし、起動時の文言と `engineStatusText` も engine を見る
 - MVP の「準備ボタンは置かない」（`docs/plans/2026-11-20-mvp.md:121`）は毎回押すボタンの話。ここで出すのは初回のダウンロードだけで、状態遷移と `CONTROLS` は変えない
@@ -27,7 +27,7 @@
 ### `src/sidepanel/messages.ts`（新規）
 
 - `MODEL_MB`（`MODEL.bytes` から丸める。573MB を2か所に書かない）、`MODEL_MISSING_MESSAGE`、`FIRST_MESSAGE` を置き、main.ts と demo.ts で共有する
-- `MODEL_MISSING_MESSAGE = '翻訳モデル（573MB）のダウンロードが必要です。数分かかります。途中で閉じても、次に開いて押すと続きから再開します'`。「初回は」は付けない（退避の後にも出るため）。進行中の「パネルを閉じると中断」（`main.ts:195`）と矛盾しないよう、再開は開き直して押すことを書く
+- `MODEL_MISSING_MESSAGE = '翻訳モデル（573MB）のダウンロードが必要です。数分かかります。'`。「初回は」は付けない（退避の後にも出るため）。閉じたときの再開の説明は、進行中の「パネルを閉じると中断」（`main.ts:195`）と食い違うので書かない
 - `FIRST_MESSAGE` は「足りない言語パックや翻訳モデルをダウンロードして」に直す。PLaMo でモデルだけある場合に、翻訳モデルまで落とすと言わないため
 
 ### `src/sidepanel/main.ts`
@@ -37,13 +37,18 @@
 - `autoPrepare()`: `modelFile()` を再確認して `modelMissing` を更新し、その直後に `message` と `render()` も更新する（availability の待ちの間、開始のままにしない）。availability が false のときは、`modelMissing` なら `MODEL_MISSING_MESSAGE`、そうでなければ `FIRST_MESSAGE`
 - `onStartClick` を `onPrimaryClick` に改名。`isFirstRun(state, backend.id, modelMissing)` なら `dispatch('prepare')` → `prepareAll()` で止める。`startSession()` を呼ばない
 - この分岐では `await` しない。`modelFile()` をクリックの中で呼ぶと、`install()` と `Translator.create()` に必要なユーザー操作が切れる（`main.ts:222-248`）。判定は起動時と `autoPrepare()` で更新したフラグで行う
-- `render()`: `first = isFirstRun(...)`。トップバーの開始を「準備」、ヒーローを「モデルをダウンロード」にする。どちらも毎回代入する（ready に戻ったときに「開始」へ戻す）
+- `render()`: `first = isFirstRun(...)`。ヒーローを「モデルをダウンロード」にし、トップバーの開始は「開始」のまま `disabled` にする（グレーアウト）。字幕が残っていても初回はヒーローを出す（`body[data-first-run]`）
 - `prepareAll()`:
   - `onProgress` で `phase === 'load'` になったら `modelMissing = false`。ダウンロードは終わってファイルがある。読み込みに失敗しても、次の開始から読み直せる
   - 失敗メッセージの「「開始」でもう一度試します」を、`modelMissing` なら「もう一度押すと、ダウンロードは続きから再開します」にする（ヒーローは字幕があると隠れるので、ボタン名を書かない）
 - `engineStatusText()`: pending かつ `backend instanceof PlamoBackend && modelMissing` なら「モデル（573MB）のダウンロードが必要です」
 - エンジン切替: Chrome にしたら `modelMissing = false`。PLaMo に戻したときは `autoPrepare()` が再判定する。切替は設定シートの中で、シートを閉じるまで開始は押せないので、数 ms の遅れは実害がない
 - `mountDemo` の `set` に `modelMissing` を渡す
+
+### `src/sidepanel/index.html` と `style.css`
+
+- 左上の状態ラベル（未準備・準備中・準備完了など）をやめる。状態は主ボタン、スピナー、バナー、色の点で分かる。点はタブ名の横に置く。`#state-label` と `stateLabel` を消し、スピナーの `aria-label` には `STATE_LABEL` を残す
+- 字幕が残っていても、初回はヒーローを出す（`body[data-first-run] .stream .hero { display: grid }`）。Chrome で一度使った後に PLaMo へ切り替え、モデルが無いときに、ヒーローが隠れてダウンロードのボタンが出ないのを避ける
 
 ### `src/sidepanel/demo.ts`
 
@@ -59,7 +64,7 @@
 1. `pnpm test`、`pnpm typecheck`、`pnpm build`
 2. モデルが無い状態でパネルを開く。新しいプロファイルで入れるか、サイドパネルの DevTools で
    `await (await navigator.storage.getDirectory()).removeEntry('plamo-3-translate-0.8b-Q4_K_M.gguf')`
-   - ヒーローに 573MB の説明と「モデルをダウンロード」、トップバーに「準備」。idle ではバナーが `data-quiet` なので、説明はヒーローに出る（`main.ts:167-173`）
+   - ヒーローに 573MB の説明と「モデルをダウンロード」、トップバーは「開始」がグレーアウト。左上に状態の文字は出ない（点だけ）。idle ではバナーが `data-quiet` なので、説明はヒーローに出る（`main.ts:167-173`）
    - 押すとダウンロードが始まり、終わると ready になって開始が出る。聞き取りは始まらない
    - 開始を押すとすぐ聞き取りが始まる。モデルのダウンロードは走らない
 3. ダウンロードを失敗させる（DevTools のオフラインなど）と idle に戻り、メッセージが「もう一度押すと、ダウンロードは続きから再開します」と言う。オンラインに戻して押すと続きから再開する
@@ -67,7 +72,7 @@
 5. ダウンロード中に対象タブを別のページへ移す。開始を押すと「開始できませんでした」になる。アイコンを押し直すと、モデルはあるので開始できる（`docs/plans/2026-11-20-mvp.md:125-126`）
 6. Chrome 翻訳に切り替える（モデルが無いまま）と開始に戻る。PLaMo に戻すとダウンロードに戻る
 7. モデルがある状態では、今までどおり開いた時に自動で読み込んで ready になる。ダウンロード後に ready → lost になっても「開始」のまま
-8. `?demo` の idle 場面で、バナーとトップバーの「準備」を確認する。ヒーローはサンプル字幕で隠れる（`src/sidepanel/style.css:364`）ので、ヒーローの「モデルをダウンロード」は実機で見る。エンジンが Chrome のときは開始のままなので、PLaMo にしておく
+8. `?demo` の idle 場面で、バナー、グレーアウトした開始、ヒーローの「モデルをダウンロード」を確認する（`data-first-run` で字幕があってもヒーローが出る）。エンジンが Chrome のときは開始のままなので、PLaMo にしておく
 
 ## やらないこと
 

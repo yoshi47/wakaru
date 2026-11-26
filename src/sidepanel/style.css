@@ -237,7 +237,8 @@ button:disabled {
 .target {
   flex: 1;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 6px;
   min-inline-size: 0;
   line-height: var(--leading-tight);
 }
@@ -246,6 +247,7 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-inline-size: 0;
   font-weight: 600;
 }
 
@@ -363,6 +365,12 @@ button:disabled {
    first final and its subtitle; the first words (interim) take its place. */
 .stream:is([data-heard], :has(.utterance)) .hero {
   display: none;
+}
+
+/* The first-run download action is in the hero, which is otherwise hidden once subtitles exist:
+   switching to PLaMo after a session with the other engine still has the model to fetch. */
+body[data-first-run] .stream .hero {
+  display: grid;
 }
 
 .utterances {
@@ -597,16 +605,8 @@ body[data-state='error'] .message::before {
   content: '⚠︎ ';
 }
 
-.status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--muted);
-}
-
 .dot {
+  flex: none;
   inline-size: 8px;
   block-size: 8px;
   border-radius: 50%;

@@ -55,7 +55,6 @@ const engineInputs = [...engineField.querySelectorAll<HTMLInputElement>('input[n
 const messageEl = byId('message');
 const progressEl = byId<HTMLProgressElement>('progress');
 const engineNote = byId('engine-note');
-const stateLabel = byId('state-label');
 const titleEl = byId('target-title');
 const bannerEl = byId('banner');
 const heroText = byId('hero-text');
@@ -133,14 +132,14 @@ function render(): void {
   document.body.dataset.state = state;
   const enabled = CONTROLS[state];
   // 開始 gives way to the model download when PLaMo's model is missing: the download is its own
-  // step, so that pressing 開始 does not start a 573MB download.
+  // step, so that pressing 開始 does not start a 573MB download. The top-bar 開始 stays, disabled.
   const first = isFirstRun(state, backend.id, modelMissing);
+  document.body.toggleAttribute('data-first-run', first);
   for (const [control, button] of Object.entries(buttons)) {
     const on = enabled.includes(control as Control);
-    button.disabled = !on;
+    button.disabled = !on || (control === 'start' && first);
     if (ACTIONS.has(control as Control)) button.hidden = !on;
   }
-  buttons.start.textContent = first ? '準備' : '開始';
   heroStart.textContent = first ? 'モデルをダウンロード' : '開始';
   heroStart.hidden = !enabled.includes('start');
   heroStart.disabled = heroStart.hidden;
@@ -158,7 +157,6 @@ function render(): void {
     engineField.querySelector<HTMLInputElement>('input:checked')?.focus();
   }
   for (const input of engineInputs) input.checked = input.value === backend.id;
-  stateLabel.textContent = STATE_LABEL[state];
   // While preparing, the engine's step (a download takes minutes) says more than the message. The
   // percentage stays on the bar: in the live region it would be announced every 8MB.
   const engineStep = readiness.engine;
