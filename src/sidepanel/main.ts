@@ -87,6 +87,29 @@ const messageEl = byId('message');
 const progressEl = byId<HTMLProgressElement>('progress');
 const settingsNote = byId('settings-note');
 engineHint.textContent = `PLaMo は訳が自然で、初回に${MODEL_MB}MBのモデルをダウンロードします。Chrome 翻訳は軽くて速く、直訳寄りです。`;
+/** The sheet head is sticky: the space above a field starts under it, not at the sheet's top. */
+const sheetHead = document.querySelector<HTMLElement>('.sheet-head')!;
+/** Each ? with its hint: the hint opens above, unless the head leaves no room for it there. */
+const hints = [...document.querySelectorAll<HTMLButtonElement>('.hint-button')].flatMap((button) => {
+  const hint = document.getElementById(button.getAttribute('aria-describedby')?.split(' ')[0] ?? '');
+  return hint ? [{ button, hint }] : [];
+});
+const placeHints = (): void => {
+  for (const { button, hint } of hints) {
+    const room = button.getBoundingClientRect().top - sheetHead.getBoundingClientRect().bottom;
+    // The 6px gap and a little air, so that the hint does not touch the head. A hidden hint
+    // measures 0: below is the safe side (it is placed again whenever it can be shown).
+    const height = hint.offsetHeight;
+    hint.classList.toggle('below', height === 0 || room < height + 12);
+  }
+};
+for (const { button } of hints) {
+  button.addEventListener('pointerenter', placeHints);
+  button.addEventListener('focus', placeHints);
+}
+// A focused hint stays open while the sheet scrolls or the window resizes: keep its side right.
+document.querySelector('.sheet')?.addEventListener('scroll', placeHints, { passive: true });
+window.addEventListener('resize', placeHints);
 /** Which setting the shared note was focused from, to return the focus when it unlocks. */
 let noteFrom: 'engine' | 'lang' | null = null;
 const titleEl = byId('target-title');
@@ -302,7 +325,7 @@ function engineReadiness(b: TranslatorBackend, p?: PrepareProgress): Check {
   if (b instanceof PlamoBackend && b.reloading) return { status: 'working', detail: 'PLaMo を読み込み直しています' };
   if (!b.ready) return { status: 'pending', detail: label };
   if (!(b instanceof PlamoBackend)) return { status: 'ok', detail: '準備できています' };
-  return { status: 'ok', detail: b.device?.startsWith('WebGPU') ? 'GPU で動いています' : 'CPU で動いています（遅め）' };
+  return { status: 'ok', detail: b.device?.startsWith('WebGPU') ? '準備できています' : 'CPU で動いています（遅め）' };
 }
 
 /** Each step reports into the readiness line `key`, and rejects with its label. */
