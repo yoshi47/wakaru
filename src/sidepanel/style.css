@@ -361,6 +361,18 @@ button:disabled {
   font-size: var(--text-lg);
 }
 
+/* The first-run choice: the PLaMo download and, under it, Chrome's translator. */
+.hero-actions {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+}
+
+.hero .secondary {
+  min-inline-size: 160px;
+  min-block-size: 40px;
+}
+
 /* Gone once something is heard in a run (data-heard), so that it does not flash back between the
    first final and its subtitle; the first words (interim) take its place. */
 .stream:is([data-heard], :has(.utterance)) .hero {

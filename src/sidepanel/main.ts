@@ -7,9 +7,9 @@ import { loadSettings, saveSettings, type Settings } from '../settings';
 import { loadTarget, onTargetChange, type Target } from '../shared/target';
 import { modelFile } from '../mt/plamo/modelStore';
 import { languageDetectorApi, speechRecognition, translatorApi } from '../types/web-ai';
-import { FIRST_MESSAGE, MODEL_MB, MODEL_MISSING_MESSAGE } from './messages';
+import { FIRST_MESSAGE, FIRST_RUN_CHOICE_MESSAGE, MODEL_MB, MODEL_MISSING_MESSAGE } from './messages';
 import { Session } from './session';
-import { CONTROLS, isFirstRun, next, type Control, type Event, type State } from './state';
+import { canOfferChrome, CONTROLS, isFirstRun, next, type Control, type Event, type State } from './state';
 import { byId, LogView, SubtitleView, type Check } from './ui';
 
 const LOCALES = ['ja-JP', 'en-US'];
@@ -59,6 +59,7 @@ const titleEl = byId('target-title');
 const bannerEl = byId('banner');
 const heroText = byId('hero-text');
 const heroStart = byId<HTMLButtonElement>('start-hero');
+const chromeHero = byId<HTMLButtonElement>('chrome-hero');
 const utterancesEl = byId('utterances');
 /** What the hero (shown until the first subtitle) says in the states that have no message of their own. */
 const HERO_TEXT: Partial<Record<State, string>> = {
@@ -80,6 +81,10 @@ let state: State = 'idle';
 let message = '';
 /** PLaMo's model is not in OPFS: the download stands in for 開始 (see isFirstRun). */
 let modelMissing = false;
+/** Chrome's translator can be offered as the other first-run choice (checked once). */
+let chromeAvailable = false;
+/** The first-run message: the choice when Chrome is available, otherwise the download alone. */
+const firstRunMessage = () => (chromeAvailable ? FIRST_RUN_CHOICE_MESSAGE : MODEL_MISSING_MESSAGE);
 /** Each preparation step: the engine's shows in the banner and under the engine choice. */
 const readiness: Record<'langs' | 'detector' | 'engine', Check> = {
   langs: { status: 'pending', detail: '' },
@@ -127,7 +132,7 @@ function render(): void {
   // its focus goes to the note saying why, which stays where the user is. (A hidden or disabled element loses focus at
   // once, so focus is checked against where it can no longer be.)
   const active = document.activeElement;
-  const focusInActions = actionsEl.contains(active) || active === heroStart;
+  const focusInActions = actionsEl.contains(active) || active === heroStart || active === chromeHero;
   const focusInEngine = engineField.contains(active);
   document.body.dataset.state = state;
   const enabled = CONTROLS[state];
@@ -140,7 +145,9 @@ function render(): void {
     button.disabled = !on || (control === 'start' && first);
     if (ACTIONS.has(control as Control)) button.hidden = !on;
   }
-  heroStart.textContent = first ? 'モデルをダウンロード' : '開始';
+  heroStart.textContent = first ? `PLaMo を使う（${MODEL_MB}MB）` : '開始';
+  chromeHero.hidden = !(first && chromeAvailable);
+  chromeHero.disabled = chromeHero.hidden;
   heroStart.hidden = !enabled.includes('start');
   heroStart.disabled = heroStart.hidden;
   busyButton.hidden = !BUSY.has(state);
@@ -293,6 +300,27 @@ async function preparableWithoutClick(b: TranslatorBackend): Promise<boolean> {
   return (await Promise.all(checks)).every((a) => a === 'available');
 }
 
+/** Whether Chrome's translator can be offered as the other first-run choice. */
+async function checkChrome(): Promise<void> {
+  try {
+    const [jaToEn, enToJa] = await Promise.all([
+      translatorApi().availability({ sourceLanguage: 'ja', targetLanguage: 'en' }),
+      translatorApi().availability({ sourceLanguage: 'en', targetLanguage: 'ja' }),
+    ]);
+    chromeAvailable = canOfferChrome(jaToEn, enToJa);
+  } catch (e) {
+    log(`chrome availability check failed: ${err(e)}`);
+    chromeAvailable = false;
+  }
+  if (
+    isFirstRun(state, backend.id, modelMissing) &&
+    (message === MODEL_MISSING_MESSAGE || message === FIRST_RUN_CHOICE_MESSAGE)
+  ) {
+    message = firstRunMessage();
+    render();
+  }
+}
+
 /** Prepares in the background when nothing needs downloading: 開始 then starts at once. */
 async function autoPrepare(): Promise<void> {
   const token = ++autoToken;
@@ -307,8 +335,8 @@ async function autoPrepare(): Promise<void> {
   if (token !== autoToken || b !== backend || state !== 'idle') return;
   // The label and the engine note follow the model check, before the slower availability calls:
   // after an engine switch, a missing model should not keep showing 開始 for that long.
-  if (modelMissing) message = MODEL_MISSING_MESSAGE;
-  else if (message === MODEL_MISSING_MESSAGE) message = '';
+  if (modelMissing) message = firstRunMessage();
+  else if (message === MODEL_MISSING_MESSAGE || message === FIRST_RUN_CHOICE_MESSAGE) message = '';
   render();
   const ok = await preparableWithoutClick(b).catch((e: unknown) => {
     log(`availability check failed: ${err(e)}`);
@@ -317,7 +345,7 @@ async function autoPrepare(): Promise<void> {
   // The engine may have been switched, or 開始 pressed, while checking.
   if (token !== autoToken || b !== backend || state !== 'idle') return;
   if (!ok) {
-    message = modelMissing ? MODEL_MISSING_MESSAGE : FIRST_MESSAGE;
+    message = modelMissing ? firstRunMessage() : FIRST_MESSAGE;
     render();
     return;
   }
@@ -354,8 +382,18 @@ function onPrimaryClick(): void {
   });
 }
 
+/** The first-run choice: Chrome's translator, prepared within this click (its API needs one). */
+function onChromeClick(): void {
+  if (demo) return;
+  autoToken++;
+  if (!isFirstRun(state, backend.id, modelMissing)) return;
+  if (!switchEngine('chrome')) return;
+  if (dispatch('prepare', '準備しています')) void prepareAll();
+}
+
 buttons.start.addEventListener('click', onPrimaryClick);
 heroStart.addEventListener('click', onPrimaryClick);
+chromeHero.addEventListener('click', onChromeClick);
 
 async function startSession(): Promise<void> {
   // Before any await: a second click would try to capture the tab twice.
@@ -426,23 +464,24 @@ buttons.close.addEventListener('click', () => {
   if (windowId !== undefined) void chrome.sidePanel.close({ windowId });
 });
 
-// Only in idle and ready: switching while translating would dispose() the engine under the job
-// in progress. The new engine needs 準備, and the previous one is disposed to free PLaMo's GPU memory.
-engineField.addEventListener('change', () => {
-  const engine = engineInputs.find((i) => i.checked)?.value as Settings['engine'] | undefined;
-  if (!engine) return;
-  if (engine === backend.id) return;
+/**
+ * Switches the engine, disposing the previous one. False when the state does not allow it.
+ * The caller decides what comes next: autoPrepare() from the settings sheet, or prepareAll() from
+ * the first-run choice (whose click must reach Translator.create()).
+ */
+function switchEngine(engine: Settings['engine']): boolean {
+  if (engine === backend.id) return true;
   const previous = backend;
   const previousMissing = modelMissing;
   backend = makeBackend(engine);
-  // Chrome needs no PLaMo model. Switching to PLaMo re-checks it in autoPrepare below; the sheet
-  // covers the panel until it closes, so the first render of the new engine cannot be clicked.
+  // Chrome needs no PLaMo model. Switching to PLaMo re-checks it in autoPrepare; the sheet covers
+  // the panel until it closes, so the first render of the new engine cannot be clicked.
   if (!(backend instanceof PlamoBackend)) modelMissing = false;
   if (!dispatch('engineChanged', '')) {
     backend = previous;
     modelMissing = previousMissing;
     render();
-    return;
+    return false;
   }
   readiness.engine = engineReadiness(backend);
   render();
@@ -452,6 +491,15 @@ engineField.addEventListener('change', () => {
   );
   settings = { ...settings, engine };
   void saveSettings(settings);
+  return true;
+}
+
+// Only in idle and ready: switching while translating would dispose() the engine under the job
+// in progress. The new engine needs 準備, and the previous one is disposed to free PLaMo's GPU memory.
+engineField.addEventListener('change', () => {
+  const engine = engineInputs.find((i) => i.checked)?.value as Settings['engine'] | undefined;
+  if (!engine || engine === backend.id) return;
+  if (!switchEngine(engine)) return;
   if (!demo) void autoPrepare();
 });
 
@@ -489,23 +537,25 @@ function acceptTarget(t: Target | null): void {
 // from the start when PLaMo's model is missing.
 if (backend instanceof PlamoBackend) {
   modelMissing = !(await modelFile());
-  if (modelMissing) message = MODEL_MISSING_MESSAGE;
+  if (modelMissing) message = firstRunMessage();
 }
 // Listen before reading, so that a change made while reading is not missed.
 onTargetChange(acceptTarget);
 acceptTarget(await loadTarget());
 render();
 
+if (!demo) void checkChrome();
 if (!demo) void autoPrepare();
 if (demo) {
   const { mountDemo } = await import('./demo');
   target ??= { tabId: 0, title: 'Weekly sync – Google Meet', windowId: windowId ?? 0 };
   mountDemo({
     subtitles,
-    set: (s, text, r, missing) => {
+    set: (s, text, r, missing, chrome) => {
       state = s;
       message = text;
       modelMissing = missing;
+      chromeAvailable = chrome;
       Object.assign(readiness, r);
       render();
     },

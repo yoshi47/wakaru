@@ -6,6 +6,8 @@
  * tab and starting the recognizers) has 閉じる only, so that a second click cannot capture the
  * tab twice.
  */
+import type { Availability } from '../types/web-ai';
+
 export type State = 'idle' | 'preparing' | 'ready' | 'starting' | 'running' | 'stopping' | 'error';
 
 export type Event =
@@ -62,4 +64,12 @@ export const CONTROLS: Record<State, readonly Control[]> = {
  */
 export function isFirstRun(state: State, engine: 'plamo' | 'chrome', modelMissing: boolean): boolean {
   return state === 'idle' && engine === 'plamo' && modelMissing;
+}
+
+/**
+ * Whether Chrome's translator can be offered as the other first-run choice. Both directions must
+ * exist; a downloadable one is created within the click (its model downloads then).
+ */
+export function canOfferChrome(jaToEn: Availability, enToJa: Availability): boolean {
+  return jaToEn !== 'unavailable' && enToJa !== 'unavailable';
 }

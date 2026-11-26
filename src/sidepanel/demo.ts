@@ -5,14 +5,14 @@
 import type { Piece } from '../asr/paragrapher';
 import type { Outcome } from '../mt/queue';
 import type { Lang } from '../shared/lang';
-import { MODEL_MISSING_MESSAGE } from './messages';
+import { FIRST_RUN_CHOICE_MESSAGE } from './messages';
 import type { State } from './state';
 import type { Check, SubtitleView } from './ui';
 type Readiness = { langs: Check; detector: Check; engine: Check };
 
 export type DemoHooks = {
   subtitles: SubtitleView;
-  set(state: State, message: string, readiness: Readiness, modelMissing: boolean): void;
+  set(state: State, message: string, readiness: Readiness, modelMissing: boolean, chromeAvailable: boolean): void;
 };
 
 // Utterances of dev/utterances.json, with translations PLaMo gave in Task 4.
@@ -38,8 +38,8 @@ const GROWING: { lang: Lang; pieces: string[]; translation: string } = {
 const ok = (detail = ''): Check => ({ status: 'ok', detail });
 const READY: Readiness = { langs: ok('日本語 · 英語'), detector: ok(), engine: ok('GPU で動いています') };
 
-const SCENES: Record<State, [string, Readiness, boolean?]> = {
-  idle: [MODEL_MISSING_MESSAGE, { langs: { status: 'pending', detail: '' }, detector: { status: 'pending', detail: '' }, engine: { status: 'pending', detail: 'PLaMo' } }, true],
+const SCENES: Record<State, [string, Readiness, boolean?, boolean?]> = {
+  idle: [FIRST_RUN_CHOICE_MESSAGE, { langs: { status: 'pending', detail: '' }, detector: { status: 'pending', detail: '' }, engine: { status: 'pending', detail: 'PLaMo' } }, true, true],
   preparing: ['準備しています', { langs: ok('日本語 · 英語'), detector: ok(), engine: { status: 'working', detail: 'PLaMo をダウンロード中（パネルを閉じると中断）', ratio: 0.45 } }],
   ready: ['「開始」を押すと、対象タブの音声を聞き取ります', READY],
   starting: ['開始しています', READY],
@@ -84,8 +84,8 @@ export function mountDemo(hooks: DemoHooks): void {
   select.value = 'running';
   const showScene = () => {
     const state = select.value as State;
-    const [message, readiness, missing] = SCENES[state];
-    hooks.set(state, message, readiness, missing ?? false);
+    const [message, readiness, missing, chrome] = SCENES[state];
+    hooks.set(state, message, readiness, missing ?? false, chrome ?? false);
   };
   select.addEventListener('change', showScene);
   bar.append(select);
