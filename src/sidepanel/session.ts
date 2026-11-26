@@ -6,7 +6,7 @@ import { StallFinalizer } from '../asr/stallFinalizer';
 import type { TabAudio, TabAudioOptions } from '../audio/tabAudio';
 import type { TranslatorBackend } from '../mt/backend';
 import { TranslationQueue, type Outcome } from '../mt/queue';
-import type { Settings } from '../settings';
+import type { Settings, LangMode } from '../settings';
 import type { Lang } from '../shared/lang';
 
 export type SessionEvents = {
@@ -36,6 +36,8 @@ const TICK_MS = 100;
 const DRAIN_MS = 5000;
 const other = (lang: Lang): Lang => (lang === 'ja' ? 'en' : 'ja');
 const letters = (text: string) => text.replace(/\s/g, '').length;
+/** Which recognizers run for each mode. `auto` is the old behavior (both). */
+const LANGS: Record<LangMode, readonly Lang[]> = { auto: ['ja', 'en'], ja: ['ja'], en: ['en'] };
 
 /** One run from start to stop: tab audio → recognizers → StallFinalizer / Arbiter → queue. */
 export class Session {
@@ -98,13 +100,18 @@ export class Session {
       noise: opts.settings.noise,
       onEnded: () => void s.stop('キャプチャ対象のタブが終了しました。アイコンを押し直してください'),
     });
-    s.#recognizer = new DualRecognizer(s.#audio.track, {
-      onInterim: (lang, generation, text) => s.#onInterim(lang, generation, text),
-      onFinal: (lang, generation, text) => s.#onFinal(lang, generation, text),
-      onEnd: (lang, generation) => s.#onEnd(lang, generation),
-      onFatal: (lang, error) => void s.stop(`音声認識（${lang}）が止まりました: ${error}`, true),
-      onLog: (m) => opts.events.onLog(m),
-    });
+    const langs = LANGS[opts.settings.langMode];
+    s.#recognizer = new DualRecognizer(
+      s.#audio.track,
+      {
+        onInterim: (lang, generation, text) => s.#onInterim(lang, generation, text),
+        onFinal: (lang, generation, text) => s.#onFinal(lang, generation, text),
+        onEnd: (lang, generation) => s.#onEnd(lang, generation),
+        onFatal: (lang, error) => void s.stop(`音声認識（${lang}）が止まりました: ${error}`, true),
+        onLog: (m) => opts.events.onLog(m),
+      },
+      { langs, glossary: opts.settings.glossary },
+    );
     try {
       s.#recognizer.start();
     } catch (e) {
@@ -113,7 +120,7 @@ export class Session {
     }
     s.#timer = setInterval(() => s.#tick(), TICK_MS);
     opts.events.onLog(
-      `started (noise=${opts.settings.noise}, playback=${s.#audio.playbackState}, paragraphs=${s.#merge ? 'on' : 'off'})`,
+      `started (noise=${opts.settings.noise}, playback=${s.#audio.playbackState}, paragraphs=${s.#merge ? 'on' : 'off'}, langs=${langs.join(',')}, glossary=${opts.settings.glossary.length})`,
     );
     return s;
   }
@@ -181,6 +188,7 @@ export class Session {
 
   #push(f: Final): void {
     const text = normalize(f.lang, f.text);
+    if (!text) return;
     this.#events.onLog(`${f.lang} ${f.synthetic ? 'STALL' : 'FINAL'} "${text}"`);
     this.#arbiter.push({ ...f, text });
   }

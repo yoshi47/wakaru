@@ -30,15 +30,37 @@
 
     <div id="banner" class="banner">
       <p id="message" class="message" role="status"></p>
-      <progress id="progress" class="progress" max="1" aria-label="翻訳モデルのダウンロード" hidden></progress>
     </div>
 
     <main id="subtitles" class="stream">
       <div class="hero">
-        <p id="hero-text" class="hero-text"></p>
-        <div class="hero-actions">
-          <button id="start-hero" class="primary" type="button" hidden>開始</button>
-          <button id="chrome-hero" class="secondary" type="button" hidden>Chrome 翻訳で続ける</button>
+        <div id="hero-lang-setup" class="hero-setup" hidden>
+          <h3 class="field-title" id="hero-lang-title">会議の言語</h3>
+          <fieldset class="segmented three" id="hero-lang" aria-labelledby="hero-lang-title" aria-describedby="hero-lang-desc" disabled>
+            <div class="track">
+              <label>
+                <input type="radio" name="hero-lang" value="auto" />
+                <span class="option-name">自動</span>
+              </label>
+              <label>
+                <input type="radio" name="hero-lang" value="ja" />
+                <span class="option-name">日本語</span>
+              </label>
+              <label>
+                <input type="radio" name="hero-lang" value="en" />
+                <span class="option-name">英語</span>
+              </label>
+            </div>
+          </fieldset>
+          <p id="hero-lang-desc" class="hint hero-lang-desc"></p>
+        </div>
+        <div class="hero-start">
+          <p id="hero-text" class="hero-text"></p>
+          <progress id="progress" class="hero-progress" max="1" aria-label="翻訳モデルのダウンロード" hidden></progress>
+          <div class="hero-actions">
+            <button id="start-hero" class="primary" type="button" hidden>開始</button>
+            <button id="chrome-hero" class="secondary" type="button" hidden>Chrome 翻訳で続ける</button>
+          </div>
         </div>
       </div>
       <ol id="utterances" class="utterances"></ol>
@@ -59,28 +81,58 @@
       </div>
       <div class="sheet-body">
         <section>
-          <fieldset class="segmented" id="engine" aria-describedby="engine-status engine-note" disabled>
-            <legend>翻訳エンジン</legend>
+          <div class="field-head">
+            <h3 class="field-title" id="engine-title">翻訳エンジン</h3>
+            <button id="engine-help" class="hint-button" type="button" aria-label="翻訳エンジンの説明" aria-describedby="engine-hint">?</button>
+            <p id="engine-hint" class="field-hint" role="tooltip"></p>
+          </div>
+          <fieldset class="segmented" id="engine" aria-labelledby="engine-title" aria-describedby="engine-hint engine-status settings-note" disabled>
             <div class="track">
               <label>
                 <input type="radio" name="engine" value="plamo" />
                 <span class="option-name">PLaMo</span>
-                <!-- 573MB: MODEL.bytes in src/mt/plamo/modelStore.ts (messages.ts derives its copy). -->
-                <span class="option-desc">訳が自然 · 初回に 573MB</span>
               </label>
               <label>
                 <input type="radio" name="engine" value="chrome" />
                 <span class="option-name">Chrome 翻訳</span>
-                <span class="option-desc">軽くて速い · 直訳寄り</span>
               </label>
             </div>
           </fieldset>
           <p id="engine-status" class="hint"></p>
-          <p id="engine-note" class="hint" tabindex="-1">準備中と聞き取り中は変更できません。</p>
+          <div class="field-head">
+            <h3 class="field-title" id="lang-title">聞き取る言語</h3>
+            <button id="lang-help" class="hint-button" type="button" aria-label="言語選択の説明" aria-describedby="lang-desc" hidden>?</button>
+            <p id="lang-desc" class="field-hint" role="tooltip"></p>
+          </div>
+          <fieldset class="segmented three" id="lang" aria-labelledby="lang-title" aria-describedby="lang-desc" disabled>
+            <div class="track">
+              <label>
+                <input type="radio" name="lang" value="auto" />
+                <span class="option-name">自動</span>
+              </label>
+              <label>
+                <input type="radio" name="lang" value="ja" />
+                <span class="option-name">日本語</span>
+              </label>
+              <label>
+                <input type="radio" name="lang" value="en" />
+                <span class="option-name">英語</span>
+              </label>
+            </div>
+          </fieldset>
+          <p id="settings-note" class="hint" tabindex="-1">準備中と聞き取り中は変更できません。</p>
         </section>
-        <details class="dev">
+        <section>
+          <div class="field-head">
+            <h3 class="field-title">用語集</h3>
+            <button id="glossary-help" class="hint-button" type="button" aria-label="用語集の説明" aria-describedby="glossary-hint">?</button>
+            <p id="glossary-hint" class="field-hint" role="tooltip">会議でよく使う言葉を1行に1つずつ入れておくと、日本語の聞き取りでその言葉が認識されやすくなります。次に「開始」を押したときから反映されます。</p>
+          </div>
+          <textarea id="glossary" rows="6" aria-label="用語集" aria-describedby="glossary-hint"></textarea>
+        </section>
+        <details class="more">
           <summary>不具合の報告用ログ</summary>
-          <textarea id="log" readonly rows="10" aria-label="ログ"></textarea>
+          <textarea id="log" readonly rows="8" aria-label="ログ"></textarea>
           <div class="row">
             <button id="copy-log" class="secondary" type="button">ログをコピー</button>
             <button id="clear-log" class="secondary" type="button">ログを消す</button>

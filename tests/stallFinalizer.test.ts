@@ -186,6 +186,69 @@ describe('StallFinalizer after finalizing (the recognizer keeps running)', () =>
     ]);
   });
 
+  // 2026-11-25 11:09:23: en "Website system" (from ウェブサイト) came after the ja interim had
+  // paused, and the whole schedule report was discarded as its stuck start. It was never shown.
+  it('finalizes a substantial Japanese interim, not discards it as the English stuck start', () => {
+    const s = make();
+    const report = 'はいでえっとスケジュールになってますこれまちょっと借り入れなのでま直近12月1日ウェブサイト公開とスポンサー募集開始目標で動いてます';
+    s.update('ja', 1, report, 0);
+    s.update('en', 1, 'Website', 1500);
+    expect(s.onRealFinal('en', 1, 'Website system', 1600)).toBe('Website system');
+    expect(s.tick(2800)).toEqual([{ lang: 'ja', text: report, at: 0, synthetic: true }]);
+    expect(s.discarded).toEqual([]);
+    // The late real final repeats what was finalized: nothing left to show.
+    expect(s.onRealFinal('ja', 1, report, 5600)).toBeNull();
+  });
+
+  it('finalizes a substantial Japanese interim on flush while the English side is still heard', () => {
+    const s = make();
+    const report = 'はいでえっとスケジュールになってますこれまちょっと借り入れなのでま直近12月1日ウェブサイト公開とスポンサー募集開始目標で動いてます';
+    s.update('ja', 1, report, 0);
+    s.update('en', 1, 'Website', 500);
+    expect(s.flush('ja', 1, 1300)).toEqual({ lang: 'ja', text: report, at: 0, synthetic: true });
+    expect(s.discarded).toEqual([]);
+  });
+
+  it('counts four hiragana as substantial Japanese', () => {
+    const s = make();
+    s.update('ja', 1, 'うんうん', 0);
+    s.update('en', 1, 'Yeah', 500);
+    expect(s.onRealFinal('en', 1, 'Yeah', 600)).toBe('Yeah');
+    expect(s.tick(1800)).toEqual([{ lang: 'ja', text: 'うんうん', at: 0, synthetic: true }]);
+    expect(s.discarded).toEqual([]);
+  });
+
+  // The known duplicate: tick finalized two pieces, and the late final repeats both. onRealFinal
+  // only cuts the last piece, so the whole final passes. The paragraph revise (next PR) replaces
+  // the run instead of adding it again.
+  it('passes the whole late final after two stalls, a known duplicate until revise', () => {
+    const s = make();
+    const first = 'はいでえっとスケジュールになってますこれまちょっと借り入れなので';
+    const second = 'ま直近12月1日ウェブサイト公開とスポンサー募集開始目標で動いてます';
+    s.update('ja', 1, first, 0);
+    expect(s.tick(1200)).toHaveLength(1);
+    s.update('ja', 1, second, 2000);
+    expect(s.tick(3200)).toHaveLength(1);
+    expect(s.onRealFinal('ja', 1, first + second, 5600)).toBe(first + second);
+    expect(s.discarded).toEqual([]);
+  });
+
+  // 2026-11-25 11:29:23: en "Hi hi this is" discarded the ja "はい"; the next utterance repeated
+  // it, and the whole rest (45 seconds of sponsor plans) was dropped as its continuation.
+  it('passes on a substantial Japanese rest after a short start was discarded', () => {
+    const s = make();
+    s.update('ja', 1, 'はい', 0);
+    s.update('en', 1, 'Hi hi this is', 500);
+    expect(s.onRealFinal('en', 1, 'Hi hi this is', 600)).toBe('Hi hi this is');
+    expect(s.tick(1800)).toEqual([]);
+    expect(s.discarded).toEqual([['ja', 'はい']]);
+    expect(s.onRealFinal('ja', 1, 'はい はい こんな感じです はい じゃ 次 よいしょ', 5600)).toBe(
+      'はい こんな感じです はい じゃ 次 よいしょ',
+    );
+    expect(s.tick(6800)).toEqual([]);
+    expect(s.discarded).toEqual([['ja', 'はい']]);
+  });
+
   it('does not count dropped Latin letters as Japanese speech', () => {
     // Counted, they would hold up the English reply, then drop it as a stuck start.
     const s = make();

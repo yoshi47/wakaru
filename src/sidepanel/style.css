@@ -9,6 +9,9 @@
   --bg: light-dark(oklch(98.6% 0.004 85), oklch(19% 0.008 85));
   --surface: light-dark(oklch(96.2% 0.006 85), oklch(23.5% 0.009 85));
   --surface-2: light-dark(oklch(92.6% 0.008 85), oklch(29% 0.01 85));
+  /* The selected segment of a control: lighter than its track in both modes (the page bg is
+     darker than the track in dark mode, so it would read as a hole there). */
+  --segment-selected: light-dark(oklch(100% 0 0), oklch(37% 0.01 85));
   --line: light-dark(oklch(89% 0.008 85), oklch(33% 0.01 85));
   --fg: light-dark(oklch(23% 0.012 85), oklch(93% 0.006 85));
   --muted: light-dark(oklch(49% 0.012 85), oklch(71% 0.01 85));
@@ -251,6 +254,11 @@ button:disabled {
   font-weight: 600;
 }
 
+/* The meeting language, in the start screen: a per-meeting choice, not a tab-bar setting. */
+.segmented.three .track {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 /* ---- Stream: subtitles and the interim line ---- */
 
 /* Its row is fixed: with the banner out of the flow, auto-placement would move it up a row. */
@@ -271,19 +279,11 @@ button:disabled {
   min-inline-size: 0;
 }
 
-.segmented legend {
-  margin-block-end: 6px;
-  padding: 0;
-  font-size: var(--text-xs);
-  color: var(--muted);
-}
-
 .segmented .track {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 2px;
   padding: 3px;
-  /* Two lines per option: a pill would pinch them. */
   border-radius: var(--radius-card);
   background: var(--surface-2);
 }
@@ -303,12 +303,6 @@ button:disabled {
   cursor: pointer;
 }
 
-.option-desc {
-  font-size: var(--text-xs);
-  font-weight: 400;
-  color: var(--muted);
-}
-
 .segmented input {
   position: absolute;
   inset: 0;
@@ -318,10 +312,9 @@ button:disabled {
 }
 
 .segmented label:has(:checked) {
-  background: var(--bg);
+  background: var(--segment-selected);
   color: var(--fg);
   font-weight: 600;
-  outline: 1px solid var(--line);
 }
 
 .segmented label:has(:focus-visible) {
@@ -356,10 +349,46 @@ button:disabled {
   color: var(--muted);
 }
 
+.hero-setup {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  inline-size: min(100%, 260px);
+}
+
+.hero-setup .segmented {
+  inline-size: 100%;
+}
+
+.hero-setup .field-title {
+  margin: 0;
+}
+
+.hero-lang-desc {
+  margin: 0;
+  max-inline-size: 30em;
+  /* Reserve the line: switching auto (with a warning) and ja/en must not move the start button. */
+  min-block-size: 1.6em;
+}
+
+.hero-start {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  inline-size: min(100%, 300px);
+}
+
 .hero .primary {
-  min-inline-size: min(220px, 100%);
+  inline-size: 100%;
+  max-inline-size: 200px;
+  min-inline-size: 0;
   min-block-size: 48px;
   font-size: var(--text-lg);
+}
+
+/* The download label is long: keep that button a little wider than the 開始 one. */
+body[data-first-run] .hero .primary {
+  max-inline-size: 260px;
 }
 
 /* The first-run choice: PLaMo's download large, Chrome's translator small under it. */
@@ -367,11 +396,68 @@ button:disabled {
   display: grid;
   justify-items: center;
   gap: var(--space-2);
+  inline-size: 100%;
 }
 
 .hero .secondary {
-  min-inline-size: min(160px, 100%);
+  inline-size: 100%;
+  max-inline-size: 160px;
+  min-inline-size: 0;
   min-block-size: 34px;
+}
+
+/* The model download: the bar takes the big button's place in the hero, popped in as it starts. */
+.hero-progress {
+  appearance: none;
+  inline-size: 100%;
+  max-inline-size: 260px;
+  block-size: 8px;
+  margin-block: 2px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.hero-progress::-webkit-progress-bar {
+  background: var(--surface-2);
+}
+
+.hero-progress::-webkit-progress-value {
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+/* Forced colors drop both backgrounds: draw the bar in the user's system colors instead. */
+@media (forced-colors: active) {
+  .hero-progress {
+    forced-color-adjust: none;
+    border: 1px solid CanvasText;
+    background: Canvas;
+  }
+
+  .hero-progress::-webkit-progress-bar {
+    background: Canvas;
+  }
+
+  .hero-progress::-webkit-progress-value {
+    background: CanvasText;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hero-progress {
+    transition:
+      opacity 140ms ease,
+      scale 260ms cubic-bezier(0.3, 1.5, 0.5, 1);
+  }
+
+  @starting-style {
+    .hero-progress:not([hidden]) {
+      opacity: 0;
+      scale: 0.6;
+    }
+  }
 }
 
 /* Gone once something is heard in a run (data-heard), so that it does not flash back between the
@@ -383,6 +469,11 @@ button:disabled {
 /* The first-run download action is in the hero, which is otherwise hidden once subtitles exist:
    switching to PLaMo after a session with the other engine still has the model to fetch. */
 body[data-first-run] .stream .hero {
+  display: grid;
+}
+
+/* Same for the download's bar while it runs. */
+body[data-downloading] .stream .hero {
   display: grid;
 }
 
@@ -574,19 +665,18 @@ body[data-first-run] .stream .hero {
   }
 }
 
-/* ---- Banner: messages and download progress, below the top bar ---- */
+/* ---- Banner: messages, below the top bar ---- */
 
 .banner {
   grid-row: 2;
   display: grid;
-  gap: 6px;
   padding: var(--space-2) var(--space-4);
   border-block-end: var(--border);
   background: var(--surface);
 }
 
 /*
- * Nothing to show, or only what the top bar says already: kept as a live region for screen
+ * Nothing to show, or only what the hero or top bar says already: kept as a live region for screen
  * readers (display: none would drop its announcements), but out of sight and out of the layout.
  */
 .banner[data-quiet] {
@@ -745,23 +835,90 @@ body[data-state='error'] .dot {
   color: var(--muted);
 }
 
-.dev {
+.field-title {
+  margin: 0 0 6px;
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.field-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-block-size: 18px;
+  margin-block-end: 6px;
+}
+
+.field-head .field-title {
+  margin: 0;
+}
+
+.hint-button {
+  display: grid;
+  place-items: center;
+  inline-size: 18px;
+  block-size: 18px;
+  min-inline-size: 0;
+  min-block-size: 0;
+  padding: 0;
+  border: var(--border);
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: help;
+}
+
+.hint-button:hover,
+.hint-button:focus {
+  color: var(--fg);
+  border-color: var(--muted);
+}
+
+.field-hint {
+  position: absolute;
+  inset-block-start: calc(100% + 6px);
+  inset-inline-start: 0;
+  z-index: 1;
+  inline-size: min(30em, 100%);
+  margin: 0;
+  padding: var(--space-2);
+  border: var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  line-height: 1.6;
+  text-align: start;
+  display: none;
+}
+
+.hint-button:hover + .field-hint,
+.hint-button:focus + .field-hint,
+.field-hint:hover {
+  display: block;
+}
+
+.more {
   display: grid;
   gap: var(--space-2);
   border-block-start: var(--border);
   padding-block-start: var(--space-3);
 }
 
-.dev[open] {
+.more[open] {
   padding-block-end: var(--space-2);
 }
 
-.dev summary {
+.more summary {
   cursor: pointer;
-  font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 
 .sheet textarea {

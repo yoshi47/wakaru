@@ -127,4 +127,37 @@ describe('StallFinalizer with Arbiter (Task 3 timelines)', () => {
     );
     expect(adopted(decisions)).toEqual(['ja ウェブ版の方です']);
   });
+
+  // 2026-11-25 11:09:23: en heard "Website system" in the Japanese word ウェブサイト and discarded
+  // the whole schedule report as its stuck start. The report must survive.
+  it('keeps a Japanese report when en hallucinates "Website system" from ウェブサイト', async () => {
+    const report =
+      'はいでえっとスケジュールになってますこれまちょっと借り入れなのでま直近12月1日ウェブサイト公開とスポンサー募集開始目標で動いてます';
+    const decisions = await run(
+      [
+        { at: 0, kind: 'interim', lang: 'ja', text: report },
+        { at: 500, kind: 'interim', lang: 'en', text: 'Website' },
+        { at: 600, kind: 'final', lang: 'en', text: 'Website system' },
+        { at: 5600, kind: 'final', lang: 'ja', text: report },
+      ],
+      8000,
+    );
+    expect(adopted(decisions)).toEqual([`en Website system`, `ja ${report}`]);
+  });
+
+  // 2026-11-25 11:29:23: en "Hi hi this is" discarded the ja "はい"; the next utterance repeated
+  // it, and the rest (45 seconds of sponsor plans) was dropped as the discarded start's rest.
+  it('keeps the rest of a Japanese utterance after a short "はい" was discarded', async () => {
+    const rest = 'はい こんな感じです はい じゃ 次 よいしょ';
+    const decisions = await run(
+      [
+        { at: 0, kind: 'interim', lang: 'ja', text: 'はい' },
+        { at: 500, kind: 'interim', lang: 'en', text: 'Hi hi this is' },
+        { at: 600, kind: 'final', lang: 'en', text: 'Hi hi this is' },
+        { at: 5600, kind: 'final', lang: 'ja', text: `はい ${rest}` },
+      ],
+      8000,
+    );
+    expect(adopted(decisions)).toEqual([`en Hi hi this is`, `ja ${rest}`]);
+  });
 });

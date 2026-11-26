@@ -19,9 +19,11 @@ export default defineConfig({
         ...(process.env.WAKARU_HARNESS ? { harness: resolve(src, 'dev/harness.html') } : {}),
       },
       output: {
-        entryFileNames: '[name].js',
-        chunkFileNames: 'chunks/[name].js',
-        assetFileNames: 'assets/[name][extname]',
+        // `background.js` stays fixed (manifest.json names it); everything else gets a content
+        // hash, so an extension reload cannot keep a stale stylesheet or script from an old build.
+        entryFileNames: (chunk) => (chunk.name === 'background' ? 'background.js' : '[name]-[hash].js'),
+        chunkFileNames: 'chunks/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash][extname]',
       },
     },
   },

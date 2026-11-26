@@ -1,5 +1,6 @@
 import type { Lang } from '../shared/lang';
 import type { Final } from './arbiter';
+import { substantialJa } from './japanese';
 
 type State = {
   generation: number;
@@ -113,6 +114,13 @@ export class StallFinalizer {
     // heard, it would hold up the other language's reply, and then drop it as a stuck start.
     if (rest === '') return null;
     if (rest !== null && stalled?.discarded) {
+      // A short ja start ("はい") discarded as the other language's can be followed by real
+      // Japanese speech that repeats it ("はいはいこんな感じです…"). That is not the other
+      // language's speech: dropping it loses a whole utterance (2026-11-25 11:29:23).
+      if (lang === 'ja' && substantialJa(rest)) {
+        this.#heardAt.set(lang, now);
+        return rest;
+      }
       // The other language's speech, as its start was: "No ウォーリーズ" after a stuck "No".
       this.#onDiscard(lang, rest, 'rest of a stuck start');
       return null;
@@ -133,6 +141,9 @@ export class StallFinalizer {
   flush(lang: Lang, generation: number, now: number): Final | null {
     const s = this.#states.get(lang);
     if (!s || s.generation !== generation || !s.text) return null;
+    // The recognizer is ending: never lose real Japanese speech to an en hallucination heard
+    // after its last change (2026-11-25 11:09:23).
+    if (lang === 'ja' && substantialJa(s.text)) return this.#finalize(lang, s);
     if (this.#otherSpeaking(lang, now) || this.#stuckStart(lang, s)) {
       this.#discard(lang, s);
       return null;
@@ -176,6 +187,10 @@ export class StallFinalizer {
   }
 
   #stuckStart(lang: Lang, s: State): boolean {
+    // Real Japanese speech is not the stuck start of English: the en recognizer hallucinates the
+    // odd word from Japanese audio ("Website system" from ウェブサイト), and that used to discard
+    // a whole ja utterance that had paused a moment (2026-11-25 11:09:23 and 11:21:19).
+    if (lang === 'ja' && substantialJa(s.text)) return false;
     return s.changedAt < (this.#heardAt.get(other(lang)) ?? -Infinity);
   }
 

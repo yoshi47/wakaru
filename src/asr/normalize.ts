@@ -18,6 +18,14 @@ export function normalizeJa(text: string): string {
   });
 }
 
+// The on-device recognizer sometimes leaks its end-of-sentence token into the transcript
+// ("E </S>", "Hi </S>"): not speech, and it would be translated as text.
+const END_OF_SENTENCE = /<\/S>/g;
+
+/** Strip the token at the source, so that interims and finals are compared without it. */
+export const stripEndOfSentence = (text: string): string => text.replace(END_OF_SENTENCE, ' ').trim();
+
 export function normalize(lang: Lang, text: string): string {
-  return lang === 'ja' ? normalizeJa(text) : text.trim().replace(/\s+/g, ' ');
+  const s = stripEndOfSentence(text);
+  return lang === 'ja' ? normalizeJa(s) : s.trim().replace(/\s+/g, ' ');
 }
