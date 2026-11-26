@@ -35,7 +35,7 @@ const GROWING: { lang: Lang; pieces: string[]; translation: string } = {
 };
 
 const ok = (detail = ''): Check => ({ status: 'ok', detail });
-const READY: Readiness = { langs: ok('日本語 · 英語'), detector: ok(), engine: ok('GPU で動いています') };
+const READY: Readiness = { langs: ok('日本語 · 英語'), detector: ok(), engine: ok('準備できています') };
 
 const SCENES: Record<State, [string, Readiness, boolean?, boolean?]> = {
   idle: ['', { langs: { status: 'pending', detail: '' }, detector: { status: 'pending', detail: '' }, engine: { status: 'pending', detail: 'PLaMo' } }, true, true],

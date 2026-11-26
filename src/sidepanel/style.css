@@ -808,6 +808,8 @@ body[data-state='error'] .dot {
 .sheet-head {
   position: sticky;
   inset-block-start: 0;
+  /* Above the hint, so that a stale one slides under it rather than over 設定 and 閉じる. */
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -855,10 +857,11 @@ body[data-state='error'] .dot {
 }
 
 .hint-button {
+  position: relative;
   display: grid;
   place-items: center;
-  inline-size: 18px;
-  block-size: 18px;
+  inline-size: 16px;
+  block-size: 16px;
   min-inline-size: 0;
   min-block-size: 0;
   padding: 0;
@@ -867,10 +870,17 @@ body[data-state='error'] .dot {
   background: var(--surface-2);
   color: var(--muted);
   font: inherit;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   line-height: 1;
   cursor: help;
+}
+
+/* The circle is 16px; the target stays 24px (WCAG 2.5.8). */
+.hint-button::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
 }
 
 .hint-button:hover,
@@ -879,9 +889,12 @@ body[data-state='error'] .dot {
   border-color: var(--muted);
 }
 
+/* Above the button; main.ts adds .below when the sticky sheet head leaves no room for it there
+   (the engine field is the sheet's first, just under the head). */
 .field-hint {
   position: absolute;
-  inset-block-start: calc(100% + 6px);
+  inset-block-start: auto;
+  inset-block-end: calc(100% + 6px);
   inset-inline-start: 0;
   z-index: 1;
   inline-size: min(30em, 100%);
@@ -902,6 +915,11 @@ body[data-state='error'] .dot {
 .hint-button:focus + .field-hint,
 .field-hint:hover {
   display: block;
+}
+
+.field-hint.below {
+  inset-block-start: calc(100% + 6px);
+  inset-block-end: auto;
 }
 
 .more {
