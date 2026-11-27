@@ -48,13 +48,13 @@ describe('next', () => {
 
 describe('CONTROLS', () => {
   it.each<[State, Control[]]>([
-    ['idle', ['start', 'engine', 'clear', 'close']],
+    ['idle', ['start', 'engine', 'clear', 'export', 'close']],
     ['preparing', ['close']],
-    ['ready', ['start', 'engine', 'clear', 'close']],
+    ['ready', ['start', 'engine', 'clear', 'export', 'close']],
     ['starting', ['close']],
     ['running', ['stop', 'clear', 'close']],
     ['stopping', ['close']],
-    ['error', ['start', 'engine', 'clear', 'close']],
+    ['error', ['start', 'engine', 'clear', 'export', 'close']],
   ])('%s enables %j', (state, controls) => {
     expect([...CONTROLS[state]].sort()).toEqual([...controls].sort());
   });
