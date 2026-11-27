@@ -10,6 +10,7 @@ import { languageDetectorApi, speechRecognition, translatorApi } from '../types/
 import { FIRST_MESSAGE, FIRST_RUN_LABEL, MODEL_MB } from './messages';
 import { Session } from './session';
 import { canOfferChrome, CONTROLS, isFirstRun, next, type Control, type Event, type State } from './state';
+import { Transcript } from './transcript';
 import { byId, LogView, SubtitleView, type Check } from './ui';
 
 const LOCALES: Record<LangMode, readonly string[]> = {
@@ -63,6 +64,7 @@ const buttons: Record<Exclude<Control, 'engine'>, HTMLButtonElement> = {
   start: byId('start'),
   stop: byId('stop'),
   clear: byId('clear'),
+  export: byId('export'),
   close: byId('close'),
 };
 /** Shown (and only enabled) in their state; the others are icon buttons, disabled instead. */
@@ -131,6 +133,7 @@ const QUIET: ReadonlySet<State> = new Set(['starting', 'running', 'stopping']);
 const engineStatus = byId('engine-status');
 const streamEl = byId('subtitles');
 const subtitles = new SubtitleView(streamEl, byId('utterances'), byId('interim'));
+const transcript = new Transcript();
 const logView = new LogView(byId<HTMLTextAreaElement>('log'));
 const log = logView.log;
 
@@ -210,7 +213,7 @@ function render(): void {
   wasFirstRun = first;
   for (const [control, button] of Object.entries(buttons)) {
     const on = enabled.includes(control as Control);
-    button.disabled = !on || (control === 'start' && first);
+    button.disabled = !on || (control === 'start' && first) || (control === 'export' && transcript.size === 0);
     if (ACTIONS.has(control as Control)) button.hidden = !on;
   }
   heroStart.textContent = first ? `ダウンロード（${MODEL_MB}MB）` : '開始';
@@ -535,8 +538,12 @@ async function startSession(): Promise<void> {
       backend,
       events: {
         onInterim: (i) => subtitles.setInterim(i),
-        onParagraph: (jobId, u) => subtitles.show(run, jobId, u),
+        onParagraph: (jobId, u) => {
+          transcript.show(run, u);
+          subtitles.show(run, jobId, u);
+        },
         onTranslation: (o) => {
+          transcript.setOutcome(run, o);
           subtitles.setOutcome(run, o);
           if (o.kind === 'done') {
             const latency = Math.round(o.finishedAt - o.job.firstAt);
@@ -575,11 +582,31 @@ buttons.stop.addEventListener('click', () => {
 
 buttons.clear.addEventListener('click', () => {
   subtitles.clear();
+  transcript.clear();
   backend.clearContext();
   session?.closeParagraph();
   // The hero comes back, and the banner gives way to it.
   render();
   log('cleared');
+});
+
+buttons.export.addEventListener('click', () => {
+  if (transcript.size === 0) return;
+  const now = new Date();
+  const url = URL.createObjectURL(
+    new Blob([transcript.toMarkdown(now)], { type: 'text/markdown;charset=utf-8' }),
+  );
+  const a = document.createElement('a');
+  const two = (n: number) => String(n).padStart(2, '0');
+  a.href = url;
+  a.download = `wakaru-${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}-${two(now.getHours())}${two(now.getMinutes())}.md`;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  log(`exported ${transcript.size} paragraphs`);
+  message = `文字起こしを書き出しました（${transcript.size}段落）`;
+  render();
 });
 
 buttons.close.addEventListener('click', () => {
@@ -727,6 +754,7 @@ if (demo) {
   target ??= { tabId: 0, title: 'Weekly sync – Google Meet', windowId: windowId ?? 0 };
   mountDemo({
     subtitles,
+    transcript,
     set: (s, text, r, missing, chrome) => {
       state = s;
       message = text;

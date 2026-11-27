@@ -29,7 +29,7 @@ export type Event =
   /** From any state: the recognizer stopped for good, for example. */
   | 'fail';
 
-export type Control = 'start' | 'stop' | 'engine' | 'clear' | 'close';
+export type Control = 'start' | 'stop' | 'engine' | 'clear' | 'export' | 'close';
 
 const TRANSITIONS: Record<State, Partial<Record<Event, State>>> = {
   idle: { prepare: 'preparing', start: 'preparing', engineChanged: 'idle' },
@@ -49,13 +49,13 @@ export function next(state: State, event: Event): State | null {
 
 /** The controls each state enables. */
 export const CONTROLS: Record<State, readonly Control[]> = {
-  idle: ['start', 'engine', 'clear', 'close'],
+  idle: ['start', 'engine', 'clear', 'export', 'close'],
   preparing: ['close'],
-  ready: ['start', 'engine', 'clear', 'close'],
+  ready: ['start', 'engine', 'clear', 'export', 'close'],
   starting: ['close'],
   running: ['stop', 'clear', 'close'],
   stopping: ['close'],
-  error: ['start', 'engine', 'clear', 'close'],
+  error: ['start', 'engine', 'clear', 'export', 'close'],
 };
 
 /**

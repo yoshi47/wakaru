@@ -2,15 +2,17 @@
 // capturing a tab. Nothing here runs otherwise. The scenes set the state directly; the primary
 // action does nothing in demo (it would prepare for real), and 停止 has no session to stop.
 
-import type { Piece } from '../asr/paragrapher';
+import type { ParagraphUpdate, Piece } from '../asr/paragrapher';
 import type { Outcome } from '../mt/queue';
 import type { Lang } from '../shared/lang';
 import type { State } from './state';
+import type { Transcript } from './transcript';
 import type { Check, SubtitleView } from './ui';
 type Readiness = { langs: Check; detector: Check; engine: Check };
 
 export type DemoHooks = {
   subtitles: SubtitleView;
+  transcript: Transcript;
   set(state: State, message: string, readiness: Readiness, modelMissing: boolean, chromeAvailable: boolean): void;
 };
 
@@ -50,15 +52,25 @@ const SCENES: Record<State, [string, Readiness, boolean?, boolean?]> = {
 const other = (lang: Lang): Lang => (lang === 'ja' ? 'en' : 'ja');
 
 export function mountDemo(hooks: DemoHooks): void {
-  const { subtitles } = hooks;
+  const { subtitles, transcript } = hooks;
   let jobId = 0;
   /** Shows the paragraph `key` made of `pieces`, as its next version. */
   const show = (key: number, lang: Lang, pieces: string[]) => {
     const list: Piece[] = pieces.map((text) => ({ lang, text, firstAt: 0 }));
     const text = pieces.join(lang === 'ja' ? '' : ' ');
     const id = ++jobId;
-    subtitles.show(0, id, { kind: pieces.length > 1 ? 'append' : 'new', paragraph: { key, lang, text, pieces: list }, closed: null });
+    const update: ParagraphUpdate = {
+      kind: pieces.length > 1 ? 'append' : 'new',
+      paragraph: { key, lang, text, pieces: list },
+      closed: null,
+    };
+    subtitles.show(0, id, update);
+    transcript.show(0, update);
     return { id, key, text, from: lang, to: other(lang), firstAt: 0 };
+  };
+  const settle = (outcome: Outcome) => {
+    subtitles.setOutcome(0, outcome);
+    transcript.setOutcome(0, outcome);
   };
   SAMPLES.forEach(([lang, text, translation], i) => {
     const job = show(i + 1, lang, [text]);
@@ -67,11 +79,11 @@ export function mountDemo(hooks: DemoHooks): void {
       i === 4
         ? { kind: 'failed', job, reason: 'timeout', message: '', startedAt: 0, finishedAt: 0 }
         : { kind: 'done', job, translation, startedAt: 0, finishedAt: 0 };
-    subtitles.setOutcome(0, outcome);
+    settle(outcome);
   });
   const key = SAMPLES.length + 1;
   const first = show(key, GROWING.lang, GROWING.pieces.slice(0, 1));
-  subtitles.setOutcome(0, { kind: 'done', job: first, translation: GROWING.translation, startedAt: 0, finishedAt: 0 });
+  settle({ kind: 'done', job: first, translation: GROWING.translation, startedAt: 0, finishedAt: 0 });
   show(key, GROWING.lang, GROWING.pieces);
   subtitles.setInterim({ lang: 'en', text: 'Like the document layouts' });
 

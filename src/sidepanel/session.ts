@@ -61,6 +61,8 @@ export class Session {
   #nextId = 1;
   #stopping: Promise<void> | null = null;
   #ended = false;
+  /** クリア: a decision for speech before this is dropped, so that cleared text cannot come back. */
+  #clearedAt = -Infinity;
 
   private constructor(opts: SessionOptions) {
     const { settings, events } = opts;
@@ -143,8 +145,9 @@ export class Session {
     return this.#stopping;
   }
 
-  /** The clear button: what is said next starts a new subtitle. */
+  /** The clear button: speech already captured is dropped; what comes next starts a new paragraph. */
   closeParagraph(): void {
+    this.#clearedAt = performance.now();
     this.#paragrapher.close();
   }
 
@@ -195,6 +198,11 @@ export class Session {
 
   #handle(decisions: Decision[]): void {
     for (const d of decisions) {
+      // detect() may still be running when クリア comes: the window was heard before it.
+      if (d.firstAt < this.#clearedAt) {
+        this.#events.onLog(`decide dropped (cleared): ${d.lang ?? 'none'} "${d.text}"`);
+        continue;
+      }
       const rejected = d.rejected.map((f) => `${f.lang}:"${f.text}"`).join(' ');
       this.#events.onLog(`decide ${d.lang ?? 'none'} "${d.text}"${rejected ? ` rejected ${rejected}` : ''}`);
       if (!d.lang) continue;
