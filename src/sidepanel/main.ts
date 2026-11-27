@@ -69,7 +69,7 @@ const buttons: Record<Exclude<Control, 'engine'>, HTMLButtonElement> = {
 };
 /** Shown (and only enabled) in their state; the others are icon buttons, disabled instead. */
 const ACTIONS = new Set<Control>(['start', 'stop']);
-const READY_MESSAGE = '「開始」を押すと、対象タブの音声を聞き取ります';
+const READY_MESSAGE = '「開始」を押すと、対象タブの音声（マイクがオンのときは自分の声も）を聞き取ります';
 const demo = new URLSearchParams(location.search).has('demo');
 const busyButton = byId<HTMLButtonElement>('busy');
 const actionsEl = document.querySelector<HTMLElement>('.actions')!;
@@ -83,6 +83,12 @@ const heroLangSetup = byId('hero-lang-setup');
 const heroLangField = byId<HTMLFieldSetElement>('hero-lang');
 const heroLangInputs = [...heroLangField.querySelectorAll<HTMLInputElement>('input[name="hero-lang"]')];
 const heroLangDesc = byId('hero-lang-desc');
+const heroMicSetup = byId('hero-mic-setup');
+const heroMicEl = byId<HTMLInputElement>('hero-mic');
+const micEl = byId<HTMLInputElement>('mic');
+const micPermissionButton = byId<HTMLButtonElement>('mic-permission');
+const micBadge = byId('mic-badge');
+const logSpeechEl = byId<HTMLInputElement>('log-speech');
 const engineHint = byId('engine-hint');
 const glossaryEl = byId<HTMLTextAreaElement>('glossary');
 const messageEl = byId('message');
@@ -113,7 +119,7 @@ for (const { button } of hints) {
 document.querySelector('.sheet')?.addEventListener('scroll', placeHints, { passive: true });
 window.addEventListener('resize', placeHints);
 /** Which setting the shared note was focused from, to return the focus when it unlocks. */
-let noteFrom: 'engine' | 'lang' | null = null;
+let noteFrom: 'engine' | 'lang' | 'mic' | null = null;
 const titleEl = byId('target-title');
 const bannerEl = byId('banner');
 const heroText = byId('hero-text');
@@ -180,6 +186,16 @@ let runs = 0;
 let langNeedsPrepare = false;
 const windowId = (await chrome.windows.getCurrent()).id;
 let target: Target | null = null;
+/** The mic is not active in this run (it failed to start, or the device was removed). */
+let micFailure = false;
+/** The permission window already open, so that repeated 開始 does not make a second one. */
+let micPermissionWindowId: number | null = null;
+/** A create() in flight: a second 開始 must not make another permission window. */
+let micPermissionPending = false;
+/** A start is waiting for the permission page to grant, and starts by itself when it does. */
+let pendingStart = false;
+/** The permission page reported a grant: start once its window is gone. */
+let micGranted = false;
 
 function dispatch(event: Event, text?: string): boolean {
   const to = next(state, event);
@@ -200,7 +216,9 @@ function render(): void {
   const focusInActions = actionsEl.contains(active) || active === heroStart || active === chromeHero;
   const focusInEngine = engineField.contains(active);
   const focusOnLang = langField.contains(active);
+  const focusOnMic = active === micEl;
   const focusOnHeroLang = heroLangField.contains(active);
+  const focusOnHeroMic = heroMicSetup.contains(active);
   document.body.dataset.state = state;
   const enabled = CONTROLS[state];
   // 開始 gives way to the model download when PLaMo's model is missing: the download is its own
@@ -229,7 +247,10 @@ function render(): void {
   const settingsLocked = !enabled.includes('engine');
   engineField.disabled = settingsLocked;
   langField.disabled = settingsLocked;
+  micEl.disabled = settingsLocked;
   settingsNote.hidden = !settingsLocked;
+  // The permission page is not a setting: it stays available to fix a mic that failed mid-run.
+  micEl.setAttribute('aria-describedby', settingsLocked ? 'mic-hint settings-note' : 'mic-hint');
   // A hidden element referenced by aria-describedby is still read: only while it is shown.
   engineField.setAttribute(
     'aria-describedby',
@@ -243,15 +264,17 @@ function render(): void {
   if (langDescribed.length) langField.setAttribute('aria-describedby', langDescribed.join(' '));
   else langField.removeAttribute('aria-describedby');
   // The shared note: keep the focus in the sheet when a choice is disabled under it.
-  if ((focusInEngine || focusOnLang) && settingsLocked) {
-    noteFrom = focusOnLang ? 'lang' : 'engine';
+  if ((focusInEngine || focusOnLang || focusOnMic) && settingsLocked) {
+    noteFrom = focusOnMic ? 'mic' : focusOnLang ? 'lang' : 'engine';
     settingsNote.focus();
   } else if (noteFrom && !settingsLocked) {
-    (noteFrom === 'lang' ? langField : engineField).querySelector<HTMLInputElement>('input:checked')?.focus();
+    if (noteFrom === 'mic') micEl.focus();
+    else (noteFrom === 'lang' ? langField : engineField).querySelector<HTMLInputElement>('input:checked')?.focus();
     noteFrom = null;
   }
   for (const input of engineInputs) input.checked = input.value === backend.id;
   for (const input of langInputs) input.checked = input.value === settings.langMode;
+  micEl.checked = settings.mic;
   // The start screen shows the language only when a session can start (ready). The first-run
   // download and the error screen keep it in the settings.
   const showHeroLang = state === 'ready';
@@ -260,10 +283,14 @@ function render(): void {
   heroLangDesc.textContent = desc;
   if (desc) heroLangField.setAttribute('aria-describedby', 'hero-lang-desc');
   else heroLangField.removeAttribute('aria-describedby');
-  if (focusOnHeroLang && heroLangSetup.hidden) {
+  heroMicSetup.hidden = !showHeroLang;
+  heroMicEl.disabled = !showHeroLang;
+  heroMicEl.checked = settings.mic;
+  if ((focusOnHeroLang || focusOnHeroMic) && heroLangSetup.hidden) {
     actionsEl.querySelector<HTMLButtonElement>('button:not([hidden])')?.focus();
   }
   for (const input of heroLangInputs) input.checked = input.value === settings.langMode;
+  micBadge.hidden = !(state === 'running' && session?.mic && !micFailure);
   // While preparing, the engine's step (a download takes minutes) says more than the message. The
   // percentage stays on the bar: in the live region it would be announced every 8MB.
   const engineStep = readiness.engine;
@@ -284,9 +311,12 @@ function render(): void {
   // in the hero (the bar and the step's detail), so the banner keeps that text for screen readers
   // only. Kept as a live region either way (see .banner[data-quiet]).
   const hasSubtitles = utterancesEl.childElementCount > 0;
+  // A microphone that failed on a run it was asked for: the banner is the only place that says so.
+  const micNotice = state === 'running' && micFailure;
   const quiet =
     !text ||
-    (state !== 'error' &&
+    (!micNotice &&
+      state !== 'error' &&
       (progress?.ratio !== undefined ||
         !hasSubtitles ||
         QUIET.has(state) ||
@@ -520,7 +550,140 @@ buttons.start.addEventListener('click', onPrimaryClick);
 heroStart.addEventListener('click', onPrimaryClick);
 chromeHero.addEventListener('click', onChromeClick);
 
-async function startSession(): Promise<void> {
+/** The microphone's web permission. Null when the query itself is unavailable. */
+async function microphonePermission(): Promise<PermissionState | null> {
+  try {
+    return (await navigator.permissions.query({ name: 'microphone' as PermissionName })).state;
+  } catch (e) {
+    log(`microphone permission query failed: ${err(e)}`);
+    return null;
+  }
+}
+
+function createMicPermissionWindow(): void {
+  if (micPermissionPending) return;
+  micPermissionPending = true;
+  chrome.windows
+    .create({
+      url: chrome.runtime.getURL('sidepanel/mic-permission.html'),
+      type: 'popup',
+      width: 420,
+      height: 560,
+      focused: true,
+    })
+    .then(
+      (win) => {
+        micPermissionPending = false;
+        const id = win?.id ?? null;
+        micPermissionWindowId = id;
+        if (id === null) {
+          pendingStart = false;
+          micGranted = false;
+          message = 'マイクの許可画面を開けませんでした。もう一度「開始」を押してください';
+          render();
+          return;
+        }
+        // The user can close the popup before create() tells us its id: onRemoved then had no id
+        // to match, so check that the window is still there.
+        chrome.windows.get(id).catch(() => {
+          if (micPermissionWindowId === id) micPermissionWindowId = null;
+          if (!pendingStart) return;
+          pendingStart = false;
+          micGranted = false;
+          message = 'マイクの許可画面が閉じられました。もう一度「開始」を押してください';
+          render();
+        });
+      },
+      (e: unknown) => {
+        micPermissionPending = false;
+        pendingStart = false;
+        micGranted = false;
+        log(`mic permission window failed: ${err(e)}`);
+        message = `マイクの許可画面を開けませんでした: ${err(e)}。もう一度「開始」を押してください`;
+        render();
+      },
+    );
+}
+
+/** A small window, because a side panel cannot show the permission prompt (Chromium issue 336592430's family). */
+function openMicPermissionPage(): void {
+  if (micPermissionWindowId === null) {
+    createMicPermissionWindow();
+    return;
+  }
+  const id = micPermissionWindowId;
+  chrome.windows.get(id).then(
+    () => {
+      chrome.windows
+        .update(id, { focused: true, state: 'normal' })
+        .catch((e: unknown) => log(`mic permission focus failed: ${err(e)}`));
+    },
+    () => {
+      // Closed: forget the id and make the window again.
+      if (micPermissionWindowId === id) micPermissionWindowId = null;
+      createMicPermissionWindow();
+    },
+  );
+}
+
+/** Chrome's per-extension microphone setting: the generic microphone page does not list extension origins. */
+function openMicrophoneSettings(): void {
+  const site = encodeURIComponent(`chrome-extension://${chrome.runtime.id}/`);
+  chrome.tabs
+    .create({ url: `chrome://settings/content/siteDetails?site=${site}` })
+    .catch((e: unknown) => log(`mic settings failed: ${err(e)}`));
+}
+
+/** Start the attempt that was waiting, once the grant is in and the permission window is gone. */
+function tryPendingStart(): void {
+  if (!micGranted) return;
+  micGranted = false;
+  if (!pendingStart) return;
+  pendingStart = false;
+  // The permission page can be open while the user changes a setting: do not start with packs
+  // that the change invalidated, or an engine that is no longer loaded.
+  if (state !== 'ready' || langNeedsPrepare || !backend.ready) {
+    message = '許可しました。もう一度「開始」を押してください';
+    render();
+    return;
+  }
+  // The page just granted: trust it. The permissions query can still say "prompt" for a moment,
+  // and reopening the window would loop.
+  void startSession(true);
+}
+
+chrome.windows.onRemoved.addListener((windowId) => {
+  if (windowId !== micPermissionWindowId) return;
+  micPermissionWindowId = null;
+  if (micGranted) {
+    tryPendingStart();
+    return;
+  }
+  // A grant message can be a moment behind the close.
+  setTimeout(() => {
+    if (micGranted) {
+      tryPendingStart();
+      return;
+    }
+    if (!pendingStart) return;
+    pendingStart = false;
+    message = 'マイクの許可が完了していません。もう一度「開始」を押してください';
+    render();
+  }, 300);
+});
+
+chrome.runtime.onMessage.addListener((msg: unknown) => {
+  if (!msg || typeof msg !== 'object' || (msg as { type?: unknown }).type !== 'mic-granted') return;
+  micGranted = true;
+  // The window is closed first: start after it, with the meeting window back in front.
+  if (micPermissionWindowId === null) tryPendingStart();
+});
+
+async function startSession(trustedGrant = false): Promise<void> {
+  micFailure = false;
+  // A new attempt supersedes a start that was waiting for the permission page.
+  pendingStart = false;
+  micGranted = false;
   // Before any await: a second click would try to capture the tab twice.
   if (!dispatch('start', '開始しています')) return;
   const tab = target;
@@ -528,6 +691,22 @@ async function startSession(): Promise<void> {
     dispatch('startFailed', tab ? '準備ができていません。もう一度「開始」を押してください' : '対象タブがありません。会議のタブでアイコンを押してください');
     void loadTarget().then(acceptTarget);
     return;
+  }
+  if (settings.mic && !trustedGrant) {
+    const permission = await microphonePermission();
+    log(`mic permission=${permission ?? 'unknown'}`);
+    if (permission === 'prompt') {
+      pendingStart = true;
+      micGranted = false;
+      openMicPermissionPage();
+      dispatch('startFailed', 'マイクの使用を許可してください。開いた画面で許可すると、そのまま開始します');
+      return;
+    }
+    if (permission === 'denied') {
+      openMicrophoneSettings();
+      dispatch('startFailed', 'マイクがブロックされています。開いた設定で wakaru のマイクを許可してください');
+      return;
+    }
   }
   const run = ++runs;
   try {
@@ -562,14 +741,33 @@ async function startSession(): Promise<void> {
           // A target set in this window while running was held back.
           void loadTarget().then(acceptTarget);
         },
+        onMicEnded: () => {
+          micFailure = true;
+          message = 'マイクが外れました。タブ音声だけで続けます。マイクをつないでから、停止して「開始」し直してください';
+          render();
+        },
         onLog: log,
       },
     });
-    dispatch('started', `「${tab.title || `タブ ${tab.tabId}`}」の音声を聞き取っています`);
+    const started = session;
+    // The device can end between startTabAudio returning and this point: keep that notice.
+    const micEndedDuringStart = micFailure;
+    micFailure ||= started.micError !== undefined;
+    const name = tab.title || `タブ ${tab.tabId}`;
+    dispatch(
+      'started',
+      started.micError
+        ? `マイクを使えませんでした（${started.micError}）。タブ音声だけで続けます。設定の「マイクの許可を確認」から許可したあと、停止して「開始」し直してください`
+        : micEndedDuringStart
+          ? 'マイクが外れました。タブ音声だけで続けます。マイクをつないでから、停止して「開始」し直してください'
+          : started.mic
+            ? `「${name}」の音声とマイクを聞き取っています`
+            : `「${name}」の音声を聞き取っています`,
+    );
   } catch (e) {
     log(`start failed: ${err(e)}`);
     subtitles.endRun();
-    dispatch('startFailed', `開始できませんでした: ${err(e)}`);
+    dispatch('startFailed', `開始できませんでした: ${err(e)}。もう一度「開始」を押してください`);
     // A target set in this window while starting was held back.
     void loadTarget().then(acceptTarget);
   }
@@ -683,6 +881,36 @@ heroLangField.addEventListener('change', () => {
   applyLangMode(heroLangInputs.find((i) => i.checked)?.value as LangMode | undefined);
 });
 
+/** The checkbox turning on: ask for the microphone now, so 開始 needs no detour. */
+async function ensureMicPermission(): Promise<void> {
+  const permission = await microphonePermission();
+  // The user may have turned it back off while the query ran.
+  if (!settings.mic) return;
+  if (permission === 'granted') return;
+  openMicPermissionPage();
+}
+
+function applyMic(mic: boolean): void {
+  if (!CONTROLS[state].includes('engine')) {
+    render();
+    return;
+  }
+  if (mic === settings.mic) return;
+  settings = { ...settings, mic };
+  if (demo) {
+    render();
+    return;
+  }
+  void saveSettings(settings);
+  log(`mic=${settings.mic}`);
+  render();
+  if (mic) void ensureMicPermission();
+}
+
+micEl.addEventListener('change', () => applyMic(micEl.checked));
+heroMicEl.addEventListener('change', () => applyMic(heroMicEl.checked));
+micPermissionButton.addEventListener('click', () => openMicPermissionPage());
+
 glossaryEl.value = settings.glossary.join('\n');
 const saveGlossary = () => {
   const glossary = glossaryEl.value
@@ -708,6 +936,9 @@ glossaryEl.addEventListener('change', () => {
 window.addEventListener('pagehide', saveGlossary);
 
 byId('to-latest').addEventListener('click', () => subtitles.scrollToLatest());
+
+// The log is copyable: quoted speech stays hidden unless the user asks for it.
+logSpeechEl.addEventListener('change', () => logView.setRedact(!logSpeechEl.checked));
 
 const copyButton = byId<HTMLButtonElement>('copy-log');
 let copyReset: ReturnType<typeof setTimeout> | undefined;

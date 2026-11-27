@@ -69,6 +69,7 @@ async function runScenario(s: Scenario, backend: TranslatorBackend, detector: La
     const audio: TabAudio = {
       track,
       playbackState: ctx.state,
+      mic: false,
       stop: async () => {
         track.stop();
         await ctx.close();
