@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="light dark" />
+    <title>wakaru: マイクの許可</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        background: light-dark(oklch(98.6% 0.004 85), oklch(19% 0.008 85));
+        color: light-dark(oklch(23% 0.012 85), oklch(93% 0.006 85));
+        font: 0.875rem / 1.7 system-ui, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+      }
+      main {
+        display: grid;
+        gap: 16px;
+        justify-items: start;
+        max-inline-size: 34em;
+        margin: 0 auto;
+        padding: 48px 24px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.125rem;
+      }
+      p {
+        margin: 0;
+      }
+      .muted {
+        color: light-dark(oklch(49% 0.012 85), oklch(71% 0.01 85));
+        font-size: 0.8125rem;
+      }
+      button {
+        min-block-size: 36px;
+        padding: 0 16px;
+        border: 1px solid transparent;
+        border-radius: 999px;
+        background: light-dark(oklch(92.6% 0.008 85), oklch(29% 0.01 85));
+        color: inherit;
+        font: inherit;
+        font-weight: 500;
+        cursor: pointer;
+      }
+      #allow {
+        background: light-dark(oklch(46% 0.09 170), oklch(78% 0.11 170));
+        color: light-dark(oklch(98% 0.01 170), oklch(20% 0.03 170));
+        font-weight: 600;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>マイクの使用を許可する</h1>
+      <p>自分の発話も文字起こしと翻訳に加えるため、マイクを使います。</p>
+      <p class="muted">
+        音声は端末内の音声認識だけで処理され、保存・送信されません。会議がミュートでも、マイクに向かって話した内容は入ります。
+      </p>
+      <p class="muted">スピーカーだと相手の声を拾って二重になることがあります。イヤホンをおすすめします。</p>
+      <p class="muted">許可のダイアログでは「今回のみ」ではなく、常に許可する方を選んでください。</p>
+      <button id="allow" type="button">マイクを許可する</button>
+      <p id="status" role="status"></p>
+      <button id="settings" type="button" hidden>Chrome の設定を開く</button>
+      <button id="close" type="button" hidden>この画面を閉じる</button>
+    </main>
+    <script type="module" src="./micPermission.ts"></script>
+  </body>
+</html>

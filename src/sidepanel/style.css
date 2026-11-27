@@ -254,6 +254,18 @@ button:disabled {
   font-weight: 600;
 }
 
+/* The microphone is live: the browser's own indicator is not in the panel. */
+.mic-badge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
 /* The meeting language, in the start screen: a per-meeting choice, not a tab-bar setting. */
 .segmented.three .track {
   grid-template-columns: repeat(3, 1fr);
@@ -330,6 +342,68 @@ button:disabled {
   opacity: 0.6;
 }
 
+/* A boolean field in the start screen and the settings sheet. */
+.check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: 32px;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.check input {
+  inline-size: 16px;
+  block-size: 16px;
+  margin: 0;
+  cursor: inherit;
+}
+
+.check:has(:disabled) {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* A checkbox with an auxiliary action at the end of its row. */
+.check-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.check-row .check {
+  min-inline-size: 0;
+}
+
+/* A rare action (the microphone permission) that should not weigh like a second button. */
+.link-button {
+  flex: none;
+  min-block-size: 28px;
+  padding: 0 var(--space-1);
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.link-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+@media (hover: hover) {
+  .link-button:not(:disabled):hover {
+    color: var(--fg);
+  }
+}
+
 /* The empty-state action: a large 開始, or the first-run PLaMo download (shown over old subtitles). */
 .hero {
   display: grid;
@@ -369,6 +443,12 @@ button:disabled {
   max-inline-size: 30em;
   /* Reserve the line: switching auto (with a warning) and ja/en must not move the start button. */
   min-block-size: 1.6em;
+}
+
+.hero-mic-desc {
+  margin: 0;
+  max-inline-size: 30em;
+  text-align: center;
 }
 
 .hero-start {

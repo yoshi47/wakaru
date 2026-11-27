@@ -11,6 +11,7 @@
       <div class="target">
         <span class="dot" aria-hidden="true"></span>
         <span id="target-title" class="target-title">アイコンを押したタブ</span>
+        <span id="mic-badge" class="mic-badge" role="status" aria-label="マイク入力中" hidden>マイク</span>
       </div>
       <div class="actions">
         <button id="start" class="primary compact" type="button" hidden>開始</button>
@@ -56,6 +57,13 @@
             </div>
           </fieldset>
           <p id="hero-lang-desc" class="hint hero-lang-desc"></p>
+        </div>
+        <div id="hero-mic-setup" class="hero-setup" hidden>
+          <label class="check">
+            <input type="checkbox" id="hero-mic" aria-describedby="hero-mic-desc" />
+            <span>自分のマイクも聞き取る</span>
+          </label>
+          <p id="hero-mic-desc" class="hint hero-mic-desc">イヤホン推奨。スピーカーだと相手の声が二重に入ります。</p>
         </div>
         <div class="hero-start">
           <p id="hero-text" class="hero-text"></p>
@@ -127,6 +135,20 @@
         </section>
         <section>
           <div class="field-head">
+            <h3 class="field-title" id="mic-title">マイク</h3>
+            <button id="mic-help" class="hint-button" type="button" aria-label="マイク入力の説明" aria-describedby="mic-hint">?</button>
+            <p id="mic-hint" class="field-hint" role="tooltip">自分のマイクも文字起こしと翻訳に加えます。近くの人の声も入ります。イヤホンをおすすめします。会議がミュートでも、マイクに向かって話した内容は入ります。</p>
+          </div>
+          <div class="check-row">
+            <label class="check">
+              <input type="checkbox" id="mic" aria-describedby="mic-hint" />
+              <span>自分のマイクも聞き取る</span>
+            </label>
+            <button id="mic-permission" class="link-button" type="button" aria-label="マイクの許可を確認">許可を確認</button>
+          </div>
+        </section>
+        <section>
+          <div class="field-head">
             <h3 class="field-title">用語集</h3>
             <button id="glossary-help" class="hint-button" type="button" aria-label="用語集の説明" aria-describedby="glossary-hint">?</button>
             <p id="glossary-hint" class="field-hint" role="tooltip">会議でよく使う言葉を1行に1つずつ入れておくと、日本語の聞き取りでその言葉が認識されやすくなります。次に「開始」を押したときから反映されます。</p>
@@ -134,8 +156,12 @@
           <textarea id="glossary" rows="6" aria-label="用語集" aria-describedby="glossary-hint"></textarea>
         </section>
         <details class="more">
-          <summary>不具合の報告用ログ</summary>
+          <summary>不具合の報告用ログ（発話は既定で伏せます）</summary>
           <textarea id="log" readonly rows="8" aria-label="ログ"></textarea>
+          <label class="check">
+            <input type="checkbox" id="log-speech" />
+            <span>発話もログに表示する</span>
+          </label>
           <div class="row">
             <button id="copy-log" class="secondary" type="button">ログをコピー</button>
             <button id="clear-log" class="secondary" type="button">ログを消す</button>

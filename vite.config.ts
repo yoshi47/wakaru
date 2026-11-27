@@ -14,6 +14,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         sidepanel: resolve(src, 'sidepanel/index.html'),
+        micPermission: resolve(src, 'sidepanel/mic-permission.html'),
         background: resolve(src, 'background.ts'),
         // `pnpm build:harness`: the page that plays dev/overlap.json into a Session.
         ...(process.env.WAKARU_HARNESS ? { harness: resolve(src, 'dev/harness.html') } : {}),

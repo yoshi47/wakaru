@@ -177,6 +177,8 @@ export class LogView {
   readonly #log: HTMLTextAreaElement;
   readonly #t0 = performance.now();
   #lines: string[] = [];
+  /** Hide what was said: the log is copyable, and the microphone now puts private speech in it. */
+  #redact = true;
 
   constructor(log: HTMLTextAreaElement) {
     this.#log = log;
@@ -187,16 +189,33 @@ export class LogView {
     this.#lines.push(line);
     // A long meeting logs every final and decision: the oldest lines go.
     if (this.#lines.length > MAX_LOG_LINES) this.#lines.splice(0, this.#lines.length - MAX_LOG_LINES);
-    this.#log.value = this.#lines.join('\n');
-    this.#log.scrollTop = this.#log.scrollHeight;
+    this.#render();
   };
 
+  /** Show or hide the quoted speech, both on screen and in logText. */
+  setRedact(on: boolean): void {
+    this.#redact = on;
+    this.#render();
+  }
+
   get logText(): string {
-    return this.#lines.join('\n') + '\n';
+    return `${this.#text()}\n`;
   }
 
   clearLog(): void {
     this.#lines = [];
-    this.#log.value = '';
+    this.#render();
+  }
+
+  #text(): string {
+    if (!this.#redact) return this.#lines.join('\n');
+    // A greedy span per line: speech may itself contain a quote, and pairing quotes would then
+    // shift and leave part of the utterance visible. Over-redacting a rejected candidate is fine.
+    return this.#lines.map((line) => line.replace(/".*"/, '"…"')).join('\n');
+  }
+
+  #render(): void {
+    this.#log.value = this.#text();
+    this.#log.scrollTop = this.#log.scrollHeight;
   }
 }

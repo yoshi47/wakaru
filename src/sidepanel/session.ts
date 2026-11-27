@@ -20,6 +20,8 @@ export type SessionEvents = {
    * panel shows as an error; otherwise the captured tab ended.
    */
   onEnded(reason: string | null, fatal: boolean): void;
+  /** The microphone ended by itself (the device was removed); the tab audio keeps going. */
+  onMicEnded?(): void;
   onLog(message: string): void;
 };
 
@@ -36,6 +38,11 @@ const TICK_MS = 100;
 const DRAIN_MS = 5000;
 const other = (lang: Lang): Lang => (lang === 'ja' ? 'en' : 'ja');
 const letters = (text: string) => text.replace(/\s/g, '').length;
+/**
+ * Speech in the debug log. Quotes inside it become fullwidth, so the log's redaction can take the
+ * whole `"..."` span: the log is copyable and the microphone puts private speech in it.
+ */
+const quote = (text: string): string => `"${text.replaceAll('"', '＂')}"`;
 /** Which recognizers run for each mode. `auto` is the old behavior (both). */
 const LANGS: Record<LangMode, readonly Lang[]> = { auto: ['ja', 'en'], ja: ['ja'], en: ['en'] };
 
@@ -76,7 +83,7 @@ export class Session {
     });
     this.#stall = new StallFinalizer({
       stallMs: settings.stallMs,
-      onDiscard: (lang, text, why) => events.onLog(`${lang} discarded (${why}): "${text}"`),
+      onDiscard: (lang, text, why) => events.onLog(`${lang} discarded (${why}): ${quote(text)}`),
     });
     this.#merge = opts.backend.fast;
     this.#paragrapher = new Paragrapher({
@@ -100,6 +107,11 @@ export class Session {
     const s = new Session(opts);
     s.#audio = await opts.audio({
       noise: opts.settings.noise,
+      mic: opts.settings.mic,
+      onMicEnded: () => {
+        opts.events.onLog('microphone ended: continuing with the tab audio');
+        opts.events.onMicEnded?.();
+      },
       onEnded: () => void s.stop('キャプチャ対象のタブが終了しました。アイコンを押し直してください'),
     });
     const langs = LANGS[opts.settings.langMode];
@@ -122,25 +134,48 @@ export class Session {
     }
     s.#timer = setInterval(() => s.#tick(), TICK_MS);
     opts.events.onLog(
-      `started (noise=${opts.settings.noise}, playback=${s.#audio.playbackState}, paragraphs=${s.#merge ? 'on' : 'off'}, langs=${langs.join(',')}, glossary=${opts.settings.glossary.length})`,
+      `started (noise=${opts.settings.noise}, mic=${s.#audio.mic}${s.#audio.micError ? ` (${s.#audio.micError})` : ''}, playback=${s.#audio.playbackState}, paragraphs=${s.#merge ? 'on' : 'off'}, langs=${langs.join(',')}, glossary=${opts.settings.glossary.length})`,
     );
     return s;
+  }
+
+  /** Whether the microphone is mixed into this run. False when it was asked for but could not start. */
+  get mic(): boolean {
+    return this.#audio?.mic ?? false;
+  }
+
+  /** Why the microphone is not mixed, when it was asked for. */
+  get micError(): string | undefined {
+    return this.#audio?.micError;
   }
 
   /** The stop procedure of the plan. Safe to call more than once. */
   stop(reason: string | null = null, fatal = false): Promise<void> {
     this.#stopping ??= (async () => {
-      clearInterval(this.#timer);
-      this.#recognizer?.stop();
-      for (const final of this.#stall.flushAll()) this.#push(final);
-      this.#handle(await this.#arbiter.flushAll());
-      let timeout: ReturnType<typeof setTimeout> | undefined;
-      await Promise.race([this.#queue.drain(), new Promise((r) => (timeout = setTimeout(r, DRAIN_MS)))]);
-      clearTimeout(timeout);
-      await this.#audio?.stop();
-      this.#ended = true;
-      this.#events.onLog(`stopped${reason ? `: ${reason}` : ''}`);
-      this.#events.onEnded(reason, fatal);
+      try {
+        clearInterval(this.#timer);
+        try {
+          this.#recognizer?.stop();
+        } finally {
+          // Stop the capture before the drain: the microphone should not stay live while the last
+          // translations finish. A failed close must not leave the panel in 停止中.
+          await this.#audio?.stop().catch((e: unknown) => {
+            this.#events.onLog(`audio stop failed: ${e instanceof Error ? e.message : String(e)}`);
+          });
+        }
+        for (const final of this.#stall.flushAll()) this.#push(final);
+        this.#handle(await this.#arbiter.flushAll());
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([this.#queue.drain(), new Promise((r) => (timeout = setTimeout(r, DRAIN_MS)))]);
+        } finally {
+          clearTimeout(timeout);
+        }
+      } finally {
+        this.#ended = true;
+        this.#events.onLog(`stopped${reason ? `: ${reason}` : ''}`);
+        this.#events.onEnded(reason, fatal);
+      }
     })();
     return this.#stopping;
   }
@@ -169,10 +204,10 @@ export class Session {
     this.#heard.delete(lang);
     const passed = this.#stall.onRealFinal(lang, generation, text, performance.now());
     if (passed === null) {
-      this.#events.onLog(`${lang} FINAL dropped (empty, a repeat of a stalled interim, or its rest discarded): "${text}"`);
+      this.#events.onLog(`${lang} FINAL dropped (empty, a repeat of a stalled interim, or its rest discarded): ${quote(text)}`);
       return;
     }
-    if (passed !== text) this.#events.onLog(`${lang} FINAL cut to what follows a stalled interim: "${text}"`);
+    if (passed !== text) this.#events.onLog(`${lang} FINAL cut to what follows a stalled interim: ${quote(text)}`);
     this.#push({ lang, text: passed, at: performance.now(), synthetic: false });
   }
 
@@ -192,7 +227,7 @@ export class Session {
   #push(f: Final): void {
     const text = normalize(f.lang, f.text);
     if (!text) return;
-    this.#events.onLog(`${f.lang} ${f.synthetic ? 'STALL' : 'FINAL'} "${text}"`);
+    this.#events.onLog(`${f.lang} ${f.synthetic ? 'STALL' : 'FINAL'} ${quote(text)}`);
     this.#arbiter.push({ ...f, text });
   }
 
@@ -200,11 +235,11 @@ export class Session {
     for (const d of decisions) {
       // detect() may still be running when クリア comes: the window was heard before it.
       if (d.firstAt < this.#clearedAt) {
-        this.#events.onLog(`decide dropped (cleared): ${d.lang ?? 'none'} "${d.text}"`);
+        this.#events.onLog(`decide dropped (cleared): ${d.lang ?? 'none'} ${quote(d.text)}`);
         continue;
       }
-      const rejected = d.rejected.map((f) => `${f.lang}:"${f.text}"`).join(' ');
-      this.#events.onLog(`decide ${d.lang ?? 'none'} "${d.text}"${rejected ? ` rejected ${rejected}` : ''}`);
+      const rejected = d.rejected.map((f) => `${f.lang}:${quote(f.text)}`).join(' ');
+      this.#events.onLog(`decide ${d.lang ?? 'none'} ${quote(d.text)}${rejected ? ` rejected ${rejected}` : ''}`);
       if (!d.lang) continue;
       const u = this.#paragrapher.add({ lang: d.lang, text: d.text, firstAt: d.firstAt });
       const { key, text } = u.paragraph;
